@@ -41,39 +41,6 @@ pub enum Screen {
     Marketplace,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeFilter {
-    All,
-    Global,
-    Project,
-}
-
-impl ScopeFilter {
-    pub fn label(self) -> &'static str {
-        match self {
-            ScopeFilter::All => "all",
-            ScopeFilter::Global => "global",
-            ScopeFilter::Project => "project",
-        }
-    }
-
-    pub fn next(self) -> ScopeFilter {
-        match self {
-            ScopeFilter::All => ScopeFilter::Global,
-            ScopeFilter::Global => ScopeFilter::Project,
-            ScopeFilter::Project => ScopeFilter::All,
-        }
-    }
-
-    pub fn matches(self, skill: &Skill) -> bool {
-        match self {
-            ScopeFilter::All => true,
-            ScopeFilter::Global => skill.instances.iter().any(|i| i.scope == Scope::Global),
-            ScopeFilter::Project => skill.instances.iter().any(|i| i.scope == Scope::Project),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Modal {
     None,
@@ -137,7 +104,6 @@ pub struct App {
     pub screen: Screen,
     pub prev_screen: Screen,
     pub selected: usize,
-    pub scope_filter: ScopeFilter,
     pub search: Option<String>,
     pub search_active: bool,
     pub last_search: String,
@@ -159,7 +125,6 @@ impl App {
             screen: Screen::List,
             prev_screen: Screen::List,
             selected: 0,
-            scope_filter: ScopeFilter::All,
             search: None,
             search_active: false,
             last_search: String::new(),
@@ -182,7 +147,6 @@ impl App {
             .skills
             .iter()
             .enumerate()
-            .filter(|(_, s)| self.scope_filter.matches(s))
             .filter(|(_, s)| {
                 query.is_empty()
                     || s.name.to_lowercase().contains(&query)

@@ -1,4 +1,4 @@
-use super::app::{App, FormField, FormKind, Modal, ScopeFilter, Screen, SkillGroup};
+use super::app::{App, FormField, FormKind, Modal, Screen, SkillGroup};
 use super::editor::{Editor, VimMode};
 use super::events::Controller;
 use super::market::{Market, MarketFocus};
@@ -99,15 +99,6 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw(" "),
         Span::styled(format!("{count}/{total} skills"), Style::default().fg(DIM)),
-        Span::raw("  "),
-        Span::styled(
-            format!("scope: {}", app.scope_filter.label()),
-            Style::default().fg(if app.scope_filter == ScopeFilter::All {
-                DIM
-            } else {
-                ACCENT2
-            }),
-        ),
         Span::raw("  "),
         Span::styled(
             format!("group: {}", if app.grouped { "on" } else { "off" }),
@@ -1087,7 +1078,6 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("ctrl-d / ctrl-u", "half-page down / up"),
         ("/ then type", "filter · esc clears · n/N cycle"),
         ("tab", "switch between project / global boxes"),
-        ("t", "cycle scope filter (all/global/project)"),
         ("o", "toggle grouping by scope (project / global)"),
         ("enter / l", "open detail · h / esc back"),
         ("a", "create new skill"),
