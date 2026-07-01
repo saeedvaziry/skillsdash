@@ -10,8 +10,12 @@ A cross-platform terminal UI for managing AI skills across the **Claude** (`~/.c
 
 ```sh
 brew tap saeedvaziry/skillsdash https://github.com/saeedvaziry/skillsdash
+brew trust saeedvaziry/skillsdash
 brew install skillsdash
 ```
+
+Homebrew 6.0+ requires third-party taps to be trusted before install; the
+`brew trust` step is a one-time confirmation.
 
 ### Arch Linux (AUR)
 
