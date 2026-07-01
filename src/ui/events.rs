@@ -230,10 +230,8 @@ impl Controller {
                     market.query.pop();
                 }
                 KeyCode::Char(c) => market.query.push(c),
-                KeyCode::Down | KeyCode::Tab => {
-                    if !market.results.is_empty() {
-                        market.focus = MarketFocus::Results;
-                    }
+                KeyCode::Down | KeyCode::Tab if !market.results.is_empty() => {
+                    market.focus = MarketFocus::Results;
                 }
                 _ => {}
             },

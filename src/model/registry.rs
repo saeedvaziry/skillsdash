@@ -84,8 +84,7 @@ impl Registry {
         }
 
         self.skills = merged.into_values().collect();
-        self.skills
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.skills.sort_by_key(|s| s.name.to_lowercase());
         self.warnings = warnings;
     }
 
