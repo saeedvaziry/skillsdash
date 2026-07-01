@@ -1,5 +1,7 @@
 # skillsdash
 
+<img width="3840" height="2100" alt="image" src="https://github.com/user-attachments/assets/15d2b9a9-4dc2-45e5-a16c-58cff7676243" />
+
 A cross-platform terminal UI for managing AI skills across the **Claude** (`~/.claude/skills`) and **Agents** (`~/.agents/skills`) providers — plus the skills of your current project (`./.claude/skills`, `./.agents/skills`).
 
 Built with [ratatui](https://ratatui.rs) and [tui-textarea](https://github.com/rhysd/tui-textarea). Vim keybindings throughout. Colors follow your terminal theme.
