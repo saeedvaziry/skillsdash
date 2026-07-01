@@ -238,6 +238,109 @@ fn editor_edits_and_saves_body() {
 }
 
 #[test]
+fn grouping_separates_project_and_global_skills() {
+    use skillsdash::ui::app::{ListRow, SkillGroup};
+
+    let dir = temp_project("grouping");
+    // temp_project already seeds a project-scoped "demo" skill under .claude/skills.
+    // Add a global skill by pointing HOME at an isolated dir with its own skill.
+    let home = dir.join("fakehome");
+    let global = home.join(".claude/skills/globex");
+    fs::create_dir_all(&global).unwrap();
+    fs::write(
+        global.join("SKILL.md"),
+        "---\nname: globex\ndescription: a global skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    // Discover with HOME overridden so the global root resolves into our fixture.
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+
+    assert!(app.grouped, "grouping is on by default");
+
+    let rows = app.list_rows();
+    // First data row must sit under a Project header, and the global skill
+    // must sit under a Global header that comes after.
+    let mut seen_project_header = false;
+    let mut seen_global_header = false;
+    let mut demo_group = None;
+    let mut globex_group = None;
+    let mut current = None;
+    for row in &rows {
+        match row {
+            ListRow::Header(g) => {
+                current = Some(*g);
+                match g {
+                    SkillGroup::Project => seen_project_header = true,
+                    SkillGroup::Global => seen_global_header = true,
+                }
+            }
+            ListRow::Skill { registry_index, .. } => {
+                let name = app.registry.skills[*registry_index].name.as_str();
+                if name == "demo" {
+                    demo_group = current;
+                }
+                if name == "globex" {
+                    globex_group = current;
+                }
+            }
+        }
+    }
+
+    assert!(seen_project_header, "a project header should render");
+    assert!(seen_global_header, "a global header should render");
+    assert_eq!(demo_group, Some(SkillGroup::Project));
+    assert_eq!(globex_group, Some(SkillGroup::Global));
+
+    // Project group must precede the Global group.
+    let project_pos = rows
+        .iter()
+        .position(|r| matches!(r, ListRow::Header(SkillGroup::Project)))
+        .unwrap();
+    let global_pos = rows
+        .iter()
+        .position(|r| matches!(r, ListRow::Header(SkillGroup::Global)))
+        .unwrap();
+    assert!(project_pos < global_pos, "project group comes first");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn toggle_grouping_removes_headers() {
+    use skillsdash::ui::app::ListRow;
+
+    let dir = temp_project("toggle-group");
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    assert!(
+        app.list_rows()
+            .iter()
+            .any(|r| matches!(r, ListRow::Header(_))),
+        "grouped view has at least one header"
+    );
+
+    controller.handle_key(&mut app, press('o'));
+    assert!(!app.grouped, "'o' toggles grouping off");
+    assert!(
+        !app.list_rows()
+            .iter()
+            .any(|r| matches!(r, ListRow::Header(_))),
+        "ungrouped view has no headers"
+    );
+    draw(&app, &controller);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn search_filters_list() {
     let dir = temp_project("search");
     let claude = dir.join(".claude/skills");

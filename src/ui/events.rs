@@ -100,6 +100,28 @@ impl Controller {
                 app.scope_filter = app.scope_filter.next();
                 app.clamp_selection();
             }
+            KeyCode::Char('o') => {
+                let name = app.selected_skill().map(|s| s.name.clone());
+                app.grouped = !app.grouped;
+                if let Some(name) = name {
+                    if let Some(pos) = app
+                        .filtered_indices()
+                        .iter()
+                        .position(|&i| app.registry.skills[i].name == name)
+                    {
+                        app.selected = pos;
+                    }
+                }
+                app.clamp_selection();
+                app.set_status(
+                    if app.grouped {
+                        "grouped by scope"
+                    } else {
+                        "grouping off"
+                    },
+                    false,
+                );
+            }
             KeyCode::Enter | KeyCode::Char('l') => {
                 if app.selected_skill().is_some() {
                     app.detail_scroll = 0;

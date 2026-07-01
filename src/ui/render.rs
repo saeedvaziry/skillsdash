@@ -1,4 +1,4 @@
-use super::app::{App, FormField, FormKind, Modal, ScopeFilter, Screen};
+use super::app::{App, FormField, FormKind, ListRow, Modal, ScopeFilter, Screen, SkillGroup};
 use super::editor::{Editor, VimMode};
 use super::events::Controller;
 use super::market::{Market, MarketFocus};
@@ -109,6 +109,11 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             }),
         ),
         Span::raw("  "),
+        Span::styled(
+            format!("group: {}", if app.grouped { "on" } else { "off" }),
+            Style::default().fg(if app.grouped { ACCENT2 } else { DIM }),
+        ),
+        Span::raw("  "),
         Span::styled("m marketplace", Style::default().fg(ACCENT2)),
     ]);
     f.render_widget(Paragraph::new(title), area);
@@ -125,19 +130,26 @@ fn render_list_screen(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_list(f: &mut Frame, app: &App, area: Rect) {
-    let indices = app.filtered_indices();
-    let items: Vec<ListItem> = indices
+    let rows = app.list_rows();
+    let items: Vec<ListItem> = rows
         .iter()
-        .map(|&i| {
-            let skill = &app.registry.skills[i];
-            list_item(skill)
+        .map(|row| match row {
+            ListRow::Header(group) => header_item(*group),
+            ListRow::Skill { registry_index, .. } => {
+                list_item(&app.registry.skills[*registry_index])
+            }
         })
         .collect();
 
+    // `app.selected` indexes selectable skills; translate it into the widget's
+    // row index, which also counts the non-selectable header rows.
     let mut state = ListState::default();
-    if !indices.is_empty() {
-        state.select(Some(app.selected.min(indices.len() - 1)));
+    if let Some(widget_row) = rows.iter().position(
+        |row| matches!(row, ListRow::Skill { skill_index, .. } if *skill_index == app.selected),
+    ) {
+        state.select(Some(widget_row));
     }
+    let has_skills = rows.iter().any(|row| matches!(row, ListRow::Skill { .. }));
 
     let search_hint = match (&app.search, app.search_active) {
         (Some(q), true) => format!(" search: {q}▏"),
@@ -161,7 +173,7 @@ fn render_list(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_stateful_widget(list, area, &mut state);
 
-    if indices.is_empty() {
+    if !has_skills {
         let msg = if app.search.as_deref().unwrap_or("").is_empty() {
             "no skills found — press a to create one"
         } else {
@@ -175,6 +187,17 @@ fn render_list(f: &mut Frame, app: &App, area: Rect) {
         };
         f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
     }
+}
+
+fn header_item(group: SkillGroup) -> ListItem<'static> {
+    let color = match group {
+        SkillGroup::Project => ACCENT2,
+        SkillGroup::Global => ACCENT,
+    };
+    ListItem::new(Line::from(Span::styled(
+        format!("{} ", group.heading()),
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    )))
 }
 
 fn list_item(skill: &Skill) -> ListItem<'static> {
@@ -1019,6 +1042,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("ctrl-d / ctrl-u", "half-page down / up"),
         ("/ then type", "filter · esc clears · n/N cycle"),
         ("tab", "cycle scope filter (all/global/project)"),
+        ("o", "toggle grouping by scope (project / global)"),
         ("enter / l", "open detail · h / esc back"),
         ("a", "create new skill"),
         ("e", "edit SKILL.md body (built-in vim editor)"),
@@ -1123,7 +1147,7 @@ fn render_status(
     } else {
         let hint = match app.screen {
             Screen::List => {
-                " j/k move · / search · a new · e edit · s share · x delete · ? help · q quit"
+                " j/k move · / search · o group · a new · e edit · s share · x delete · ? help · q"
             }
             Screen::Detail => " j/k scroll · e edit · f frontmatter · s share · x delete · h back",
             Screen::Help => " esc close",

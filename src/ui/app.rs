@@ -2,6 +2,47 @@ use crate::model::{Provider, Registry, Scope, Skill};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillGroup {
+    Project,
+    Global,
+}
+
+impl SkillGroup {
+    pub fn of(skill: &Skill) -> SkillGroup {
+        if skill.instances.iter().any(|i| i.scope == Scope::Project) {
+            SkillGroup::Project
+        } else {
+            SkillGroup::Global
+        }
+    }
+
+    pub fn heading(self) -> &'static str {
+        match self {
+            SkillGroup::Project => "project skills",
+            SkillGroup::Global => "global skills",
+        }
+    }
+
+    fn order(self) -> u8 {
+        match self {
+            SkillGroup::Project => 0,
+            SkillGroup::Global => 1,
+        }
+    }
+}
+
+/// One visible row in the list: either a group heading or a selectable skill.
+/// `skill_index` on a `Skill` row is the position within `filtered_indices()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListRow {
+    Header(SkillGroup),
+    Skill {
+        registry_index: usize,
+        skill_index: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     List,
     Detail,
@@ -116,6 +157,7 @@ pub struct App {
     pub form: Option<FormState>,
     pub status: Option<(String, bool)>,
     pub pending_g: bool,
+    pub grouped: bool,
     pub should_quit: bool,
 }
 
@@ -137,6 +179,7 @@ impl App {
             form: None,
             status: None,
             pending_g: false,
+            grouped: true,
             should_quit: false,
         };
         app.clamp_selection();
@@ -145,7 +188,8 @@ impl App {
 
     pub fn filtered_indices(&self) -> Vec<usize> {
         let query = self.search.as_deref().unwrap_or("").to_lowercase();
-        self.registry
+        let mut indices: Vec<usize> = self
+            .registry
             .skills
             .iter()
             .enumerate()
@@ -156,7 +200,46 @@ impl App {
                     || s.description.to_lowercase().contains(&query)
             })
             .map(|(i, _)| i)
-            .collect()
+            .collect();
+
+        if self.grouped {
+            // Registry order is already alphabetical, so a stable sort by group
+            // keeps names sorted within each group.
+            indices.sort_by_key(|&i| SkillGroup::of(&self.registry.skills[i]).order());
+        }
+        indices
+    }
+
+    /// Rows to render in the list: group headers interleaved with skills.
+    /// Headers appear only when grouping is on and both groups are visible
+    /// (i.e. the scope filter isn't already narrowing to a single group).
+    pub fn list_rows(&self) -> Vec<ListRow> {
+        let indices = self.filtered_indices();
+        if !self.grouped {
+            return indices
+                .iter()
+                .enumerate()
+                .map(|(skill_index, &registry_index)| ListRow::Skill {
+                    registry_index,
+                    skill_index,
+                })
+                .collect();
+        }
+
+        let mut rows = Vec::with_capacity(indices.len() + 2);
+        let mut current: Option<SkillGroup> = None;
+        for (skill_index, &registry_index) in indices.iter().enumerate() {
+            let group = SkillGroup::of(&self.registry.skills[registry_index]);
+            if current != Some(group) {
+                rows.push(ListRow::Header(group));
+                current = Some(group);
+            }
+            rows.push(ListRow::Skill {
+                registry_index,
+                skill_index,
+            });
+        }
+        rows
     }
 
     pub fn visible_count(&self) -> usize {
