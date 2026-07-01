@@ -166,13 +166,12 @@ fn create_flow_writes_skill_to_project_scope() {
     let mut app = App::new(dir.clone());
     let mut controller = Controller::new();
 
+    // The fixture only has a project-scoped skill, so the project box is
+    // focused and `a` prefills scope = project. No scope toggle needed.
     controller.handle_key(&mut app, press('a'));
     type_str(&mut app, &mut controller, "brand-new");
     controller.handle_key(&mut app, key(KeyCode::Tab));
     type_str(&mut app, &mut controller, "a freshly made skill");
-    controller.handle_key(&mut app, key(KeyCode::Tab));
-    controller.handle_key(&mut app, key(KeyCode::Tab));
-    controller.handle_key(&mut app, press(' '));
     controller.handle_key(&mut app, key(KeyCode::Enter));
 
     let expected = dir.join(".claude/skills/brand-new/SKILL.md");
@@ -324,11 +323,12 @@ fn tab_swaps_focus_between_project_and_global_boxes() {
     let mut controller = Controller::new();
 
     // Selection starts in the project box (project section renders first).
+    assert_eq!(app.focused_group, SkillGroup::Project);
     assert_eq!(app.selected_group(), Some(SkillGroup::Project));
 
     // Tab jumps the selection into the global box.
     controller.handle_key(&mut app, key(KeyCode::Tab));
-    assert_eq!(app.selected_group(), Some(SkillGroup::Global));
+    assert_eq!(app.focused_group, SkillGroup::Global);
     assert_eq!(
         app.selected_skill().map(|s| s.name.as_str()),
         Some("globex")
@@ -336,8 +336,85 @@ fn tab_swaps_focus_between_project_and_global_boxes() {
 
     // Tab again jumps back to the project box.
     controller.handle_key(&mut app, key(KeyCode::Tab));
-    assert_eq!(app.selected_group(), Some(SkillGroup::Project));
+    assert_eq!(app.focused_group, SkillGroup::Project);
     assert_eq!(app.selected_skill().map(|s| s.name.as_str()), Some("demo"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn both_group_boxes_render_when_one_is_empty() {
+    use skillsdash::ui::app::SkillGroup;
+
+    // A project with skills but NO global skills (HOME points at an empty dir).
+    let dir = temp_project("empty-global");
+    let home = dir.join("emptyhome");
+    fs::create_dir_all(&home).unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+
+    // Both group sections exist; global is present but empty.
+    let sections = app.grouped_sections();
+    let groups: Vec<SkillGroup> = sections.iter().map(|(g, _)| *g).collect();
+    assert_eq!(groups, vec![SkillGroup::Project, SkillGroup::Global]);
+    let global = sections
+        .iter()
+        .find(|(g, _)| *g == SkillGroup::Global)
+        .unwrap();
+    assert!(global.1.is_empty(), "no global skills in this fixture");
+
+    // Renders both boxes (empty global box included) without panicking.
+    let controller = Controller::new();
+    draw(&app, &controller);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn create_form_prefills_scope_from_focused_group() {
+    use skillsdash::model::Scope;
+    use skillsdash::ui::app::{FormKind, SkillGroup};
+
+    // Project + global skills so both boxes are populated and Tab can move focus.
+    let dir = temp_project("prefill");
+    let home = dir.join("fakehome");
+    let global = home.join(".claude/skills/globex");
+    fs::create_dir_all(&global).unwrap();
+    fs::write(
+        global.join("SKILL.md"),
+        "---\nname: globex\ndescription: a global skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let mut app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let mut controller = Controller::new();
+
+    // Focused on the project box -> `a` prefills scope = project.
+    assert_eq!(app.focused_group, SkillGroup::Project);
+    controller.handle_key(&mut app, press('a'));
+    let form = app.form.as_ref().expect("create form open");
+    assert_eq!(form.kind, FormKind::Create);
+    assert_eq!(form.scope, Scope::Project);
+    controller.handle_key(&mut app, key(KeyCode::Esc));
+
+    // Focus the global box, then `a` prefills scope = global.
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.focused_group, SkillGroup::Global);
+    controller.handle_key(&mut app, press('a'));
+    let form = app.form.as_ref().expect("create form open");
+    assert_eq!(form.scope, Scope::Global);
 
     let _ = fs::remove_dir_all(&dir);
 }

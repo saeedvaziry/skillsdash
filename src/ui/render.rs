@@ -122,36 +122,26 @@ fn render_list_screen(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_list(f: &mut Frame, app: &App, area: Rect) {
     let sections = app.grouped_sections();
-    let has_skills = sections.iter().any(|(_, rows)| !rows.is_empty());
-
-    if !has_skills {
-        // No sections carry skills — draw a single empty box with the message.
-        let block = list_block(app, " skills ", ACCENT);
-        f.render_widget(block, area);
-        let msg = if app.search.as_deref().unwrap_or("").is_empty() {
-            "no skills found — press a to create one"
-        } else {
-            "no matches"
-        };
-        let inner = Rect {
-            x: area.x + 2,
-            y: area.y + area.height / 2,
-            width: area.width.saturating_sub(4),
-            height: 1,
-        };
-        f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
-        return;
-    }
 
     if !app.grouped {
         // Single flat box, no group boxes.
         let rows = &sections[0].1;
-        render_section_box(f, app, area, " skills ".to_string(), ACCENT, rows, true);
+        render_section_box(
+            f,
+            app,
+            area,
+            " skills ".to_string(),
+            ACCENT,
+            rows,
+            true,
+            true,
+        );
         return;
     }
 
-    // One bordered box per present group, stacked vertically. Height is shared
-    // proportionally to each group's skill count so a small group stays small.
+    // One bordered box per group, always both, stacked vertically. Height is
+    // shared proportionally to each group's skill count so a small (or empty)
+    // group stays small.
     let constraints: Vec<Constraint> = sections
         .iter()
         .map(|(_, rows)| Constraint::Fill((rows.len().max(1)) as u16))
@@ -164,15 +154,17 @@ fn render_list(f: &mut Frame, app: &App, area: Rect) {
     for (idx, ((group, rows), slot)) in sections.iter().zip(slots.iter()).enumerate() {
         let color = group_color(*group);
         let title = format!(" {} ({}) ", group.heading(), rows.len());
+        let focused = app.focused_group == *group;
         // Show the live search query on the top box only, to avoid repeating it.
-        render_section_box(f, app, *slot, title, color, rows, idx == 0);
+        render_section_box(f, app, *slot, title, color, rows, idx == 0, focused);
     }
 }
 
-/// Draw one bordered list box containing the given `(skill_index,
-/// registry_index)` rows. Highlights the selected skill only if it falls in
-/// this box; other boxes render without a selection. When searching,
+/// Draw one bordered list box for a group. The border brightens when the box
+/// is focused; the selected row is highlighted only when this box is focused
+/// and holds the selection. Empty boxes show a hint. When searching,
 /// `show_search` swaps the group title for the live query.
+#[allow(clippy::too_many_arguments)]
 fn render_section_box(
     f: &mut Frame,
     app: &App,
@@ -181,6 +173,7 @@ fn render_section_box(
     color: Color,
     rows: &[(usize, usize)],
     show_search: bool,
+    focused: bool,
 ) {
     let items: Vec<ListItem> = rows
         .iter()
@@ -188,11 +181,13 @@ fn render_section_box(
         .collect();
 
     let mut state = ListState::default();
-    if let Some(pos) = rows
-        .iter()
-        .position(|&(skill_index, _)| skill_index == app.selected)
-    {
-        state.select(Some(pos));
+    if focused {
+        if let Some(pos) = rows
+            .iter()
+            .position(|&(skill_index, _)| skill_index == app.selected)
+        {
+            state.select(Some(pos));
+        }
     }
 
     let title = if show_search && app.search_active {
@@ -201,7 +196,22 @@ fn render_section_box(
         title
     };
 
-    let block = list_block(app, &title, color);
+    let block = list_block(app, &title, color, focused);
+    f.render_widget(block.clone(), area);
+
+    if rows.is_empty() {
+        let msg = if app.search.as_deref().unwrap_or("").is_empty() {
+            "no skills here — press a to create one"
+        } else {
+            "no matches"
+        };
+        let inner = block.inner(area);
+        if inner.height > 0 {
+            f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
+        }
+        return;
+    }
+
     let list = List::default()
         .items(items)
         .block(block)
@@ -210,8 +220,14 @@ fn render_section_box(
     f.render_stateful_widget(list, area, &mut state);
 }
 
-fn list_block(app: &App, title: &str, color: Color) -> Block<'static> {
-    let color = if app.search_active { WARN } else { color };
+fn list_block(app: &App, title: &str, color: Color, focused: bool) -> Block<'static> {
+    let color = if app.search_active {
+        WARN
+    } else if focused {
+        color
+    } else {
+        FAINT
+    };
     Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))

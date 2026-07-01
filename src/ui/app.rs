@@ -113,6 +113,7 @@ pub struct App {
     pub status: Option<(String, bool)>,
     pub pending_g: bool,
     pub grouped: bool,
+    pub focused_group: SkillGroup,
     pub should_quit: bool,
 }
 
@@ -134,9 +135,11 @@ impl App {
             status: None,
             pending_g: false,
             grouped: true,
+            focused_group: SkillGroup::Project,
             should_quit: false,
         };
         app.clamp_selection();
+        app.sync_focus_to_selection();
         app
     }
 
@@ -166,9 +169,10 @@ impl App {
     /// Skills partitioned into their groups, in display order (project first).
     /// Each entry is `(group, rows)` where every row is `(skill_index,
     /// registry_index)`; `skill_index` is the position within
-    /// `filtered_indices()`. Only groups that contain at least one skill are
-    /// returned. When grouping is off, a single `Global`-labeled section holds
-    /// everything (the label is ignored by the caller in that case).
+    /// `filtered_indices()`. When grouping is on, BOTH groups are always
+    /// returned even if a group is empty, so both boxes render. When grouping
+    /// is off, a single `Global`-labeled section holds everything (the label is
+    /// ignored by the caller in that case).
     pub fn grouped_sections(&self) -> Vec<(SkillGroup, Vec<(usize, usize)>)> {
         let indices = self.filtered_indices();
         if !self.grouped {
@@ -180,15 +184,15 @@ impl App {
             return vec![(SkillGroup::Global, rows)];
         }
 
-        let mut sections: Vec<(SkillGroup, Vec<(usize, usize)>)> = Vec::new();
+        let mut project = Vec::new();
+        let mut global = Vec::new();
         for (skill_index, &registry_index) in indices.iter().enumerate() {
-            let group = SkillGroup::of(&self.registry.skills[registry_index]);
-            match sections.last_mut() {
-                Some((g, rows)) if *g == group => rows.push((skill_index, registry_index)),
-                _ => sections.push((group, vec![(skill_index, registry_index)])),
+            match SkillGroup::of(&self.registry.skills[registry_index]) {
+                SkillGroup::Project => project.push((skill_index, registry_index)),
+                SkillGroup::Global => global.push((skill_index, registry_index)),
             }
         }
-        sections
+        vec![(SkillGroup::Project, project), (SkillGroup::Global, global)]
     }
 
     pub fn visible_count(&self) -> usize {
@@ -200,24 +204,40 @@ impl App {
         self.selected_skill().map(SkillGroup::of)
     }
 
-    /// Move the selection into the first skill of the other group box.
-    /// No-op unless grouping is on and both groups are present.
+    /// Rows for one group box, as `(skill_index, registry_index)` pairs.
+    fn group_rows(&self, group: SkillGroup) -> Vec<(usize, usize)> {
+        self.grouped_sections()
+            .into_iter()
+            .find(|(g, _)| *g == group)
+            .map(|(_, rows)| rows)
+            .unwrap_or_default()
+    }
+
+    /// Keep `focused_group` pointing at the group the selection sits in, so
+    /// that j/k navigation across the group boundary updates which box is
+    /// focused. Empty-group focus (set by Tab) is preserved when there is no
+    /// selected skill to derive a group from.
+    pub fn sync_focus_to_selection(&mut self) {
+        if let Some(group) = self.selected_group() {
+            self.focused_group = group;
+        }
+    }
+
+    /// Switch focus to the other group box. If that box has skills, move the
+    /// selection to its first skill; if it is empty, focus rests on the empty
+    /// box (no row highlighted) so actions like `a` still target it.
     pub fn focus_other_group(&mut self) {
         if !self.grouped {
             return;
         }
-        let sections = self.grouped_sections();
-        if sections.len() < 2 {
-            return;
-        }
-        let current = self.selected_group();
-        // Pick the first section whose group differs from the current one.
-        if let Some((_, rows)) = sections
-            .iter()
-            .find(|(group, _)| Some(*group) != current)
-            .filter(|(_, rows)| !rows.is_empty())
-        {
-            self.selected = rows[0].0;
+        let target = match self.focused_group {
+            SkillGroup::Project => SkillGroup::Global,
+            SkillGroup::Global => SkillGroup::Project,
+        };
+        self.focused_group = target;
+        let rows = self.group_rows(target);
+        if let Some(&(skill_index, _)) = rows.first() {
+            self.selected = skill_index;
         }
     }
 

@@ -1,5 +1,5 @@
 use super::actions::{self, ShareMethod};
-use super::app::{App, FormField, FormKind, FormState, Modal, Screen};
+use super::app::{App, FormField, FormKind, FormState, Modal, Screen, SkillGroup};
 use super::editor::{Editor, EditorSignal};
 use super::market::{JobEvent, Market, MarketFocus};
 use crate::model::{Provider, Scope};
@@ -72,18 +72,34 @@ impl Controller {
             app.pending_g = false;
             if key.code == KeyCode::Char('g') {
                 app.select_first();
+                app.sync_focus_to_selection();
                 return;
             }
         }
 
         match key.code {
-            KeyCode::Char('d') if ctrl => app.move_selection(10),
-            KeyCode::Char('u') if ctrl => app.move_selection(-10),
+            KeyCode::Char('d') if ctrl => {
+                app.move_selection(10);
+                app.sync_focus_to_selection();
+            }
+            KeyCode::Char('u') if ctrl => {
+                app.move_selection(-10);
+                app.sync_focus_to_selection();
+            }
             KeyCode::Char('q') => app.should_quit = true,
-            KeyCode::Char('j') | KeyCode::Down => app.move_selection(1),
-            KeyCode::Char('k') | KeyCode::Up => app.move_selection(-1),
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.move_selection(1);
+                app.sync_focus_to_selection();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.move_selection(-1);
+                app.sync_focus_to_selection();
+            }
             KeyCode::Char('g') => app.pending_g = true,
-            KeyCode::Char('G') => app.select_last(),
+            KeyCode::Char('G') => {
+                app.select_last();
+                app.sync_focus_to_selection();
+            }
             KeyCode::Char('/') => {
                 app.search_active = true;
                 app.search = Some(String::new());
@@ -110,6 +126,7 @@ impl Controller {
                     }
                 }
                 app.clamp_selection();
+                app.sync_focus_to_selection();
                 app.set_status(
                     if app.grouped {
                         "grouped by scope"
@@ -179,6 +196,7 @@ impl Controller {
             return;
         }
         app.move_selection(dir);
+        app.sync_focus_to_selection();
     }
 
     fn handle_detail(&mut self, app: &mut App, key: KeyEvent) {
@@ -386,16 +404,22 @@ impl Controller {
     }
 
     fn open_create_form(&mut self, app: &mut App) {
+        // Prefill the scope from the focused group box so `a` creates where the
+        // user is looking (project box -> project, global box -> global).
+        let scope = match app.focused_group {
+            SkillGroup::Project => Scope::Project,
+            SkillGroup::Global => Scope::Global,
+        };
         app.form = Some(FormState {
             kind: FormKind::Create,
             name: String::new(),
             description: String::new(),
             provider: Provider::Claude,
-            scope: Scope::Global,
+            scope,
             field: FormField::Name,
             editing_skill: None,
             target_provider: Provider::Claude,
-            target_scope: Scope::Global,
+            target_scope: scope,
         });
         app.prev_screen = app.screen;
         app.screen = Screen::Form;
