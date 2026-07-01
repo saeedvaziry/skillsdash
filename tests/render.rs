@@ -239,7 +239,7 @@ fn editor_edits_and_saves_body() {
 
 #[test]
 fn grouping_separates_project_and_global_skills() {
-    use skillsdash::ui::app::{ListRow, SkillGroup};
+    use skillsdash::ui::app::SkillGroup;
 
     let dir = temp_project("grouping");
     // temp_project already seeds a project-scoped "demo" skill under .claude/skills.
@@ -264,76 +264,55 @@ fn grouping_separates_project_and_global_skills() {
 
     assert!(app.grouped, "grouping is on by default");
 
-    let rows = app.list_rows();
-    // First data row must sit under a Project header, and the global skill
-    // must sit under a Global header that comes after.
-    let mut seen_project_header = false;
-    let mut seen_global_header = false;
-    let mut demo_group = None;
-    let mut globex_group = None;
-    let mut current = None;
-    for row in &rows {
-        match row {
-            ListRow::Header(g) => {
-                current = Some(*g);
-                match g {
-                    SkillGroup::Project => seen_project_header = true,
-                    SkillGroup::Global => seen_global_header = true,
-                }
-            }
-            ListRow::Skill { registry_index, .. } => {
-                let name = app.registry.skills[*registry_index].name.as_str();
-                if name == "demo" {
-                    demo_group = current;
-                }
-                if name == "globex" {
-                    globex_group = current;
-                }
-            }
-        }
-    }
+    // Two separate sections (boxes): project first, then global.
+    let sections = app.grouped_sections();
+    let groups: Vec<SkillGroup> = sections.iter().map(|(g, _)| *g).collect();
+    assert_eq!(
+        groups,
+        vec![SkillGroup::Project, SkillGroup::Global],
+        "project section comes before global section"
+    );
 
-    assert!(seen_project_header, "a project header should render");
-    assert!(seen_global_header, "a global header should render");
-    assert_eq!(demo_group, Some(SkillGroup::Project));
-    assert_eq!(globex_group, Some(SkillGroup::Global));
+    let name_in = |group: SkillGroup, name: &str| {
+        sections
+            .iter()
+            .find(|(g, _)| *g == group)
+            .map(|(_, rows)| {
+                rows.iter()
+                    .any(|&(_, ri)| app.registry.skills[ri].name == name)
+            })
+            .unwrap_or(false)
+    };
+    assert!(
+        name_in(SkillGroup::Project, "demo"),
+        "demo is a project skill"
+    );
+    assert!(
+        name_in(SkillGroup::Global, "globex"),
+        "globex is a global skill"
+    );
 
-    // Project group must precede the Global group.
-    let project_pos = rows
-        .iter()
-        .position(|r| matches!(r, ListRow::Header(SkillGroup::Project)))
-        .unwrap();
-    let global_pos = rows
-        .iter()
-        .position(|r| matches!(r, ListRow::Header(SkillGroup::Global)))
-        .unwrap();
-    assert!(project_pos < global_pos, "project group comes first");
+    // Renders two stacked boxes without panicking.
+    let controller = Controller::new();
+    draw(&app, &controller);
 
     let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn toggle_grouping_removes_headers() {
-    use skillsdash::ui::app::ListRow;
-
+fn toggle_grouping_collapses_to_single_section() {
     let dir = temp_project("toggle-group");
     let mut app = App::new(dir.clone());
     let mut controller = Controller::new();
 
-    assert!(
-        app.list_rows()
-            .iter()
-            .any(|r| matches!(r, ListRow::Header(_))),
-        "grouped view has at least one header"
-    );
+    assert!(app.grouped, "grouping is on by default");
 
     controller.handle_key(&mut app, press('o'));
     assert!(!app.grouped, "'o' toggles grouping off");
-    assert!(
-        !app.list_rows()
-            .iter()
-            .any(|r| matches!(r, ListRow::Header(_))),
-        "ungrouped view has no headers"
+    assert_eq!(
+        app.grouped_sections().len(),
+        1,
+        "ungrouped view is a single flat section"
     );
     draw(&app, &controller);
 

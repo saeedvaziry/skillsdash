@@ -31,17 +31,6 @@ impl SkillGroup {
     }
 }
 
-/// One visible row in the list: either a group heading or a selectable skill.
-/// `skill_index` on a `Skill` row is the position within `filtered_indices()`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ListRow {
-    Header(SkillGroup),
-    Skill {
-        registry_index: usize,
-        skill_index: usize,
-    },
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     List,
@@ -210,36 +199,32 @@ impl App {
         indices
     }
 
-    /// Rows to render in the list: group headers interleaved with skills.
-    /// Headers appear only when grouping is on and both groups are visible
-    /// (i.e. the scope filter isn't already narrowing to a single group).
-    pub fn list_rows(&self) -> Vec<ListRow> {
+    /// Skills partitioned into their groups, in display order (project first).
+    /// Each entry is `(group, rows)` where every row is `(skill_index,
+    /// registry_index)`; `skill_index` is the position within
+    /// `filtered_indices()`. Only groups that contain at least one skill are
+    /// returned. When grouping is off, a single `Global`-labeled section holds
+    /// everything (the label is ignored by the caller in that case).
+    pub fn grouped_sections(&self) -> Vec<(SkillGroup, Vec<(usize, usize)>)> {
         let indices = self.filtered_indices();
         if !self.grouped {
-            return indices
+            let rows: Vec<(usize, usize)> = indices
                 .iter()
                 .enumerate()
-                .map(|(skill_index, &registry_index)| ListRow::Skill {
-                    registry_index,
-                    skill_index,
-                })
+                .map(|(skill_index, &registry_index)| (skill_index, registry_index))
                 .collect();
+            return vec![(SkillGroup::Global, rows)];
         }
 
-        let mut rows = Vec::with_capacity(indices.len() + 2);
-        let mut current: Option<SkillGroup> = None;
+        let mut sections: Vec<(SkillGroup, Vec<(usize, usize)>)> = Vec::new();
         for (skill_index, &registry_index) in indices.iter().enumerate() {
             let group = SkillGroup::of(&self.registry.skills[registry_index]);
-            if current != Some(group) {
-                rows.push(ListRow::Header(group));
-                current = Some(group);
+            match sections.last_mut() {
+                Some((g, rows)) if *g == group => rows.push((skill_index, registry_index)),
+                _ => sections.push((group, vec![(skill_index, registry_index)])),
             }
-            rows.push(ListRow::Skill {
-                registry_index,
-                skill_index,
-            });
         }
-        rows
+        sections
     }
 
     pub fn visible_count(&self) -> usize {

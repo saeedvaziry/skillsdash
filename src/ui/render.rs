@@ -1,4 +1,4 @@
-use super::app::{App, FormField, FormKind, ListRow, Modal, ScopeFilter, Screen, SkillGroup};
+use super::app::{App, FormField, FormKind, Modal, ScopeFilter, Screen, SkillGroup};
 use super::editor::{Editor, VimMode};
 use super::events::Controller;
 use super::market::{Market, MarketFocus};
@@ -130,50 +130,13 @@ fn render_list_screen(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_list(f: &mut Frame, app: &App, area: Rect) {
-    let rows = app.list_rows();
-    let items: Vec<ListItem> = rows
-        .iter()
-        .map(|row| match row {
-            ListRow::Header(group) => header_item(*group),
-            ListRow::Skill { registry_index, .. } => {
-                list_item(&app.registry.skills[*registry_index])
-            }
-        })
-        .collect();
-
-    // `app.selected` indexes selectable skills; translate it into the widget's
-    // row index, which also counts the non-selectable header rows.
-    let mut state = ListState::default();
-    if let Some(widget_row) = rows.iter().position(
-        |row| matches!(row, ListRow::Skill { skill_index, .. } if *skill_index == app.selected),
-    ) {
-        state.select(Some(widget_row));
-    }
-    let has_skills = rows.iter().any(|row| matches!(row, ListRow::Skill { .. }));
-
-    let search_hint = match (&app.search, app.search_active) {
-        (Some(q), true) => format!(" search: {q}▏"),
-        (Some(q), false) if !q.is_empty() => format!(" /{q} "),
-        _ => " skills ".to_string(),
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if app.search_active { WARN } else { ACCENT }))
-        .title(Span::styled(
-            search_hint,
-            Style::default().fg(if app.search_active { WARN } else { ACCENT }),
-        ));
-
-    let list = List::default()
-        .items(items)
-        .block(block)
-        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▌ ");
-
-    f.render_stateful_widget(list, area, &mut state);
+    let sections = app.grouped_sections();
+    let has_skills = sections.iter().any(|(_, rows)| !rows.is_empty());
 
     if !has_skills {
+        // No sections carry skills — draw a single empty box with the message.
+        let block = list_block(app, " skills ", ACCENT);
+        f.render_widget(block, area);
         let msg = if app.search.as_deref().unwrap_or("").is_empty() {
             "no skills found — press a to create one"
         } else {
@@ -186,18 +149,100 @@ fn render_list(f: &mut Frame, app: &App, area: Rect) {
             height: 1,
         };
         f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
+        return;
+    }
+
+    if !app.grouped {
+        // Single flat box, no group boxes.
+        let rows = &sections[0].1;
+        render_section_box(f, app, area, " skills ".to_string(), ACCENT, rows, true);
+        return;
+    }
+
+    // One bordered box per present group, stacked vertically. Height is shared
+    // proportionally to each group's skill count so a small group stays small.
+    let constraints: Vec<Constraint> = sections
+        .iter()
+        .map(|(_, rows)| Constraint::Fill((rows.len().max(1)) as u16))
+        .collect();
+    let slots = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (idx, ((group, rows), slot)) in sections.iter().zip(slots.iter()).enumerate() {
+        let color = group_color(*group);
+        let title = format!(" {} ({}) ", group.heading(), rows.len());
+        // Show the live search query on the top box only, to avoid repeating it.
+        render_section_box(f, app, *slot, title, color, rows, idx == 0);
     }
 }
 
-fn header_item(group: SkillGroup) -> ListItem<'static> {
-    let color = match group {
+/// Draw one bordered list box containing the given `(skill_index,
+/// registry_index)` rows. Highlights the selected skill only if it falls in
+/// this box; other boxes render without a selection. When searching,
+/// `show_search` swaps the group title for the live query.
+fn render_section_box(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    title: String,
+    color: Color,
+    rows: &[(usize, usize)],
+    show_search: bool,
+) {
+    let items: Vec<ListItem> = rows
+        .iter()
+        .map(|&(_, registry_index)| list_item(&app.registry.skills[registry_index]))
+        .collect();
+
+    let mut state = ListState::default();
+    if let Some(pos) = rows
+        .iter()
+        .position(|&(skill_index, _)| skill_index == app.selected)
+    {
+        state.select(Some(pos));
+    }
+
+    let title = if show_search && app.search_active {
+        search_title(app)
+    } else {
+        title
+    };
+
+    let block = list_block(app, &title, color);
+    let list = List::default()
+        .items(items)
+        .block(block)
+        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▌ ");
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn list_block(app: &App, title: &str, color: Color) -> Block<'static> {
+    let color = if app.search_active { WARN } else { color };
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(
+            title.to_string(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ))
+}
+
+fn search_title(app: &App) -> String {
+    match (&app.search, app.search_active) {
+        (Some(q), true) => format!(" search: {q}▏"),
+        (Some(q), false) if !q.is_empty() => format!(" /{q} "),
+        _ => " skills ".to_string(),
+    }
+}
+
+fn group_color(group: SkillGroup) -> Color {
+    match group {
         SkillGroup::Project => ACCENT2,
         SkillGroup::Global => ACCENT,
-    };
-    ListItem::new(Line::from(Span::styled(
-        format!("{} ", group.heading()),
-        Style::default().fg(color).add_modifier(Modifier::BOLD),
-    )))
+    }
 }
 
 fn list_item(skill: &Skill) -> ListItem<'static> {
