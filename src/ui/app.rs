@@ -231,6 +231,32 @@ impl App {
         self.filtered_indices().len()
     }
 
+    /// The group the currently selected skill belongs to, if any.
+    pub fn selected_group(&self) -> Option<SkillGroup> {
+        self.selected_skill().map(SkillGroup::of)
+    }
+
+    /// Move the selection into the first skill of the other group box.
+    /// No-op unless grouping is on and both groups are present.
+    pub fn focus_other_group(&mut self) {
+        if !self.grouped {
+            return;
+        }
+        let sections = self.grouped_sections();
+        if sections.len() < 2 {
+            return;
+        }
+        let current = self.selected_group();
+        // Pick the first section whose group differs from the current one.
+        if let Some((_, rows)) = sections
+            .iter()
+            .find(|(group, _)| Some(*group) != current)
+            .filter(|(_, rows)| !rows.is_empty())
+        {
+            self.selected = rows[0].0;
+        }
+    }
+
     pub fn selected_skill(&self) -> Option<&Skill> {
         let indices = self.filtered_indices();
         indices

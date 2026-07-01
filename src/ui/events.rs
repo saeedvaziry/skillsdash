@@ -96,7 +96,8 @@ impl Controller {
                     app.clamp_selection();
                 }
             }
-            KeyCode::Tab | KeyCode::Char('t') => {
+            KeyCode::Tab | KeyCode::BackTab => app.focus_other_group(),
+            KeyCode::Char('t') => {
                 app.scope_filter = app.scope_filter.next();
                 app.clamp_selection();
             }

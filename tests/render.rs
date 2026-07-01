@@ -300,6 +300,49 @@ fn grouping_separates_project_and_global_skills() {
 }
 
 #[test]
+fn tab_swaps_focus_between_project_and_global_boxes() {
+    use skillsdash::ui::app::SkillGroup;
+
+    let dir = temp_project("tab-focus");
+    // temp_project seeds a project-scoped "demo". Add a global skill via HOME.
+    let home = dir.join("fakehome");
+    let global = home.join(".claude/skills/globex");
+    fs::create_dir_all(&global).unwrap();
+    fs::write(
+        global.join("SKILL.md"),
+        "---\nname: globex\ndescription: a global skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let mut app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let mut controller = Controller::new();
+
+    // Selection starts in the project box (project section renders first).
+    assert_eq!(app.selected_group(), Some(SkillGroup::Project));
+
+    // Tab jumps the selection into the global box.
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.selected_group(), Some(SkillGroup::Global));
+    assert_eq!(
+        app.selected_skill().map(|s| s.name.as_str()),
+        Some("globex")
+    );
+
+    // Tab again jumps back to the project box.
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.selected_group(), Some(SkillGroup::Project));
+    assert_eq!(app.selected_skill().map(|s| s.name.as_str()), Some("demo"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn toggle_grouping_collapses_to_single_section() {
     let dir = temp_project("toggle-group");
     let mut app = App::new(dir.clone());

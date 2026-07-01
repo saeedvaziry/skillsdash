@@ -1086,7 +1086,8 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("g g / G", "jump to top / bottom"),
         ("ctrl-d / ctrl-u", "half-page down / up"),
         ("/ then type", "filter · esc clears · n/N cycle"),
-        ("tab", "cycle scope filter (all/global/project)"),
+        ("tab", "switch between project / global boxes"),
+        ("t", "cycle scope filter (all/global/project)"),
         ("o", "toggle grouping by scope (project / global)"),
         ("enter / l", "open detail · h / esc back"),
         ("a", "create new skill"),
@@ -1192,7 +1193,7 @@ fn render_status(
     } else {
         let hint = match app.screen {
             Screen::List => {
-                " j/k move · / search · o group · a new · e edit · s share · x delete · ? help · q"
+                " j/k move · tab switch box · / search · a new · e edit · s share · x delete · ? help"
             }
             Screen::Detail => " j/k scroll · e edit · f frontmatter · s share · x delete · h back",
             Screen::Help => " esc close",
