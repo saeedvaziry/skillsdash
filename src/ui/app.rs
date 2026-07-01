@@ -2,6 +2,36 @@ use crate::model::{Provider, Registry, Scope, Skill};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillGroup {
+    Project,
+    Global,
+}
+
+impl SkillGroup {
+    pub fn of(skill: &Skill) -> SkillGroup {
+        if skill.instances.iter().any(|i| i.scope == Scope::Project) {
+            SkillGroup::Project
+        } else {
+            SkillGroup::Global
+        }
+    }
+
+    pub fn heading(self) -> &'static str {
+        match self {
+            SkillGroup::Project => "project skills",
+            SkillGroup::Global => "global skills",
+        }
+    }
+
+    fn order(self) -> u8 {
+        match self {
+            SkillGroup::Global => 0,
+            SkillGroup::Project => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     List,
     Detail,
@@ -9,39 +39,6 @@ pub enum Screen {
     Form,
     Help,
     Marketplace,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeFilter {
-    All,
-    Global,
-    Project,
-}
-
-impl ScopeFilter {
-    pub fn label(self) -> &'static str {
-        match self {
-            ScopeFilter::All => "all",
-            ScopeFilter::Global => "global",
-            ScopeFilter::Project => "project",
-        }
-    }
-
-    pub fn next(self) -> ScopeFilter {
-        match self {
-            ScopeFilter::All => ScopeFilter::Global,
-            ScopeFilter::Global => ScopeFilter::Project,
-            ScopeFilter::Project => ScopeFilter::All,
-        }
-    }
-
-    pub fn matches(self, skill: &Skill) -> bool {
-        match self {
-            ScopeFilter::All => true,
-            ScopeFilter::Global => skill.instances.iter().any(|i| i.scope == Scope::Global),
-            ScopeFilter::Project => skill.instances.iter().any(|i| i.scope == Scope::Project),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +96,34 @@ pub struct FormState {
     pub editing_skill: Option<String>,
     pub target_provider: Provider,
     pub target_scope: Scope,
+    /// Create-form multi-select. Indexed by `Provider::ALL` / `Scope::ALL`.
+    pub providers: [bool; Provider::ALL.len()],
+    pub scopes: [bool; Scope::ALL.len()],
+    /// Sub-cursor over the chips of the Provider / Scope rows.
+    pub provider_cursor: usize,
+    pub scope_cursor: usize,
+}
+
+impl FormState {
+    pub fn selected_providers(&self) -> Vec<Provider> {
+        Provider::ALL
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| self.providers[*i])
+            .map(|(_, p)| p)
+            .collect()
+    }
+
+    pub fn selected_scopes(&self) -> Vec<Scope> {
+        Scope::ALL
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| self.scopes[*i])
+            .map(|(_, s)| s)
+            .collect()
+    }
 }
 
 pub struct App {
@@ -107,7 +132,6 @@ pub struct App {
     pub screen: Screen,
     pub prev_screen: Screen,
     pub selected: usize,
-    pub scope_filter: ScopeFilter,
     pub search: Option<String>,
     pub search_active: bool,
     pub last_search: String,
@@ -116,6 +140,8 @@ pub struct App {
     pub form: Option<FormState>,
     pub status: Option<(String, bool)>,
     pub pending_g: bool,
+    pub grouped: bool,
+    pub focused_group: SkillGroup,
     pub should_quit: bool,
 }
 
@@ -128,7 +154,6 @@ impl App {
             screen: Screen::List,
             prev_screen: Screen::List,
             selected: 0,
-            scope_filter: ScopeFilter::All,
             search: None,
             search_active: false,
             last_search: String::new(),
@@ -137,30 +162,111 @@ impl App {
             form: None,
             status: None,
             pending_g: false,
+            grouped: true,
+            focused_group: SkillGroup::Project,
             should_quit: false,
         };
         app.clamp_selection();
+        app.sync_focus_to_selection();
         app
     }
 
     pub fn filtered_indices(&self) -> Vec<usize> {
         let query = self.search.as_deref().unwrap_or("").to_lowercase();
-        self.registry
+        let mut indices: Vec<usize> = self
+            .registry
             .skills
             .iter()
             .enumerate()
-            .filter(|(_, s)| self.scope_filter.matches(s))
             .filter(|(_, s)| {
                 query.is_empty()
                     || s.name.to_lowercase().contains(&query)
                     || s.description.to_lowercase().contains(&query)
             })
             .map(|(i, _)| i)
-            .collect()
+            .collect();
+
+        if self.grouped {
+            // Registry order is already alphabetical, so a stable sort by group
+            // keeps names sorted within each group.
+            indices.sort_by_key(|&i| SkillGroup::of(&self.registry.skills[i]).order());
+        }
+        indices
+    }
+
+    /// Skills partitioned into their groups, in display order (global first,
+    /// then project). Each entry is `(group, rows)` where every row is
+    /// `(skill_index, registry_index)`; `skill_index` is the position within
+    /// `filtered_indices()`. When grouping is on, BOTH groups are always
+    /// returned even if a group is empty, so both boxes render. When grouping
+    /// is off, a single `Global`-labeled section holds everything (the label is
+    /// ignored by the caller in that case).
+    pub fn grouped_sections(&self) -> Vec<(SkillGroup, Vec<(usize, usize)>)> {
+        let indices = self.filtered_indices();
+        if !self.grouped {
+            let rows: Vec<(usize, usize)> = indices
+                .iter()
+                .enumerate()
+                .map(|(skill_index, &registry_index)| (skill_index, registry_index))
+                .collect();
+            return vec![(SkillGroup::Global, rows)];
+        }
+
+        let mut project = Vec::new();
+        let mut global = Vec::new();
+        for (skill_index, &registry_index) in indices.iter().enumerate() {
+            match SkillGroup::of(&self.registry.skills[registry_index]) {
+                SkillGroup::Project => project.push((skill_index, registry_index)),
+                SkillGroup::Global => global.push((skill_index, registry_index)),
+            }
+        }
+        vec![(SkillGroup::Global, global), (SkillGroup::Project, project)]
     }
 
     pub fn visible_count(&self) -> usize {
         self.filtered_indices().len()
+    }
+
+    /// The group the currently selected skill belongs to, if any.
+    pub fn selected_group(&self) -> Option<SkillGroup> {
+        self.selected_skill().map(SkillGroup::of)
+    }
+
+    /// Rows for one group box, as `(skill_index, registry_index)` pairs.
+    fn group_rows(&self, group: SkillGroup) -> Vec<(usize, usize)> {
+        self.grouped_sections()
+            .into_iter()
+            .find(|(g, _)| *g == group)
+            .map(|(_, rows)| rows)
+            .unwrap_or_default()
+    }
+
+    /// Keep `focused_group` pointing at the group the selection sits in, so
+    /// that j/k navigation across the group boundary updates which box is
+    /// focused. Empty-group focus (set by Tab) is preserved when there is no
+    /// selected skill to derive a group from.
+    pub fn sync_focus_to_selection(&mut self) {
+        if let Some(group) = self.selected_group() {
+            self.focused_group = group;
+        }
+    }
+
+    /// Switch focus to the other group box. If that box has skills, move the
+    /// selection to its first skill; if it is empty, focus rests on the empty
+    /// box (no row highlighted) so actions like `a` still target it.
+    pub fn focus_other_group(&mut self) {
+        if !self.grouped {
+            return;
+        }
+        let target = match self.focused_group {
+            SkillGroup::Project => SkillGroup::Global,
+            SkillGroup::Global => SkillGroup::Project,
+        };
+        self.focused_group = target;
+        let rows = self.group_rows(target);
+        if let Some(&(skill_index, _)) = rows.first() {
+            self.selected = skill_index;
+        }
     }
 
     pub fn selected_skill(&self) -> Option<&Skill> {

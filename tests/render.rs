@@ -163,17 +163,27 @@ fn marketplace_opens_and_renders() {
 #[test]
 fn create_flow_writes_skill_to_project_scope() {
     let dir = temp_project("createflow");
+    // Isolate HOME so the only skill is the project-scoped fixture; that keeps
+    // the project box focused so `a` prefills scope = project.
+    let home = dir.join("fakehome");
+    fs::create_dir_all(&home).unwrap();
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
     let mut app = App::new(dir.clone());
     let mut controller = Controller::new();
 
+    // Focus the project box, then create (providers default to claude,
+    // scope prefilled to project). No scope toggle needed.
+    app.focused_group = skillsdash::ui::app::SkillGroup::Project;
     controller.handle_key(&mut app, press('a'));
     type_str(&mut app, &mut controller, "brand-new");
     controller.handle_key(&mut app, key(KeyCode::Tab));
     type_str(&mut app, &mut controller, "a freshly made skill");
-    controller.handle_key(&mut app, key(KeyCode::Tab));
-    controller.handle_key(&mut app, key(KeyCode::Tab));
-    controller.handle_key(&mut app, press(' '));
     controller.handle_key(&mut app, key(KeyCode::Enter));
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
 
     let expected = dir.join(".claude/skills/brand-new/SKILL.md");
     assert!(
@@ -195,6 +205,58 @@ fn create_flow_writes_skill_to_project_scope() {
         skillsdash::model::Provider::Claude,
         skillsdash::model::Scope::Project
     ));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn create_flow_multi_select_providers_and_scopes() {
+    use skillsdash::model::{Provider, Scope};
+
+    let dir = temp_project("multi");
+    // Isolate HOME so global writes land in the fixture, not the real home.
+    let home = dir.join("fakehome");
+    fs::create_dir_all(&home).unwrap();
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    controller.handle_key(&mut app, press('a'));
+    type_str(&mut app, &mut controller, "everywhere");
+    // Move to the provider field and check the second provider (agents) too.
+    controller.handle_key(&mut app, key(KeyCode::Tab)); // -> description
+    controller.handle_key(&mut app, key(KeyCode::Tab)); // -> provider
+    controller.handle_key(&mut app, key(KeyCode::Right)); // cursor -> agents
+    controller.handle_key(&mut app, press(' ')); // toggle agents on
+                                                 // Move to scope field. One scope is pre-checked from the focused group;
+                                                 // move the cursor to the other chip and check it too so both are on.
+    controller.handle_key(&mut app, key(KeyCode::Tab)); // -> scope
+    controller.handle_key(&mut app, key(KeyCode::Right)); // cursor -> other scope
+    controller.handle_key(&mut app, press(' ')); // toggle it on
+    controller.handle_key(&mut app, key(KeyCode::Enter));
+
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let skill = app
+        .registry
+        .skills
+        .iter()
+        .find(|s| s.name == "everywhere")
+        .expect("skill created");
+    // Created across both providers and both scopes = 4 instances.
+    for provider in [Provider::Claude, Provider::Agents] {
+        for scope in [Scope::Global, Scope::Project] {
+            assert!(
+                skill.has(provider, scope),
+                "expected instance in {provider}/{scope}"
+            );
+        }
+    }
+    assert_eq!(skill.instances.len(), 4);
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -233,6 +295,210 @@ fn editor_edits_and_saves_body() {
         content.contains("name: demo"),
         "frontmatter must be preserved"
     );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn grouping_separates_project_and_global_skills() {
+    use skillsdash::ui::app::SkillGroup;
+
+    let dir = temp_project("grouping");
+    // temp_project already seeds a project-scoped "demo" skill under .claude/skills.
+    // Add a global skill by pointing HOME at an isolated dir with its own skill.
+    let home = dir.join("fakehome");
+    let global = home.join(".claude/skills/globex");
+    fs::create_dir_all(&global).unwrap();
+    fs::write(
+        global.join("SKILL.md"),
+        "---\nname: globex\ndescription: a global skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    // Discover with HOME overridden so the global root resolves into our fixture.
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+
+    assert!(app.grouped, "grouping is on by default");
+
+    // Two separate sections (boxes): global first (top), then project (bottom).
+    let sections = app.grouped_sections();
+    let groups: Vec<SkillGroup> = sections.iter().map(|(g, _)| *g).collect();
+    assert_eq!(
+        groups,
+        vec![SkillGroup::Global, SkillGroup::Project],
+        "global section comes before project section"
+    );
+
+    let name_in = |group: SkillGroup, name: &str| {
+        sections
+            .iter()
+            .find(|(g, _)| *g == group)
+            .map(|(_, rows)| {
+                rows.iter()
+                    .any(|&(_, ri)| app.registry.skills[ri].name == name)
+            })
+            .unwrap_or(false)
+    };
+    assert!(
+        name_in(SkillGroup::Project, "demo"),
+        "demo is a project skill"
+    );
+    assert!(
+        name_in(SkillGroup::Global, "globex"),
+        "globex is a global skill"
+    );
+
+    // Renders two stacked boxes without panicking.
+    let controller = Controller::new();
+    draw(&app, &controller);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn tab_swaps_focus_between_project_and_global_boxes() {
+    use skillsdash::ui::app::SkillGroup;
+
+    let dir = temp_project("tab-focus");
+    // temp_project seeds a project-scoped "demo". Add a global skill via HOME.
+    let home = dir.join("fakehome");
+    let global = home.join(".claude/skills/globex");
+    fs::create_dir_all(&global).unwrap();
+    fs::write(
+        global.join("SKILL.md"),
+        "---\nname: globex\ndescription: a global skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let mut app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let mut controller = Controller::new();
+
+    // Selection starts in the global box (global section renders first/top).
+    assert_eq!(app.focused_group, SkillGroup::Global);
+    assert_eq!(app.selected_group(), Some(SkillGroup::Global));
+
+    // Tab jumps the selection into the project box.
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.focused_group, SkillGroup::Project);
+    assert_eq!(app.selected_skill().map(|s| s.name.as_str()), Some("demo"));
+
+    // Tab again jumps back to the global box.
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.focused_group, SkillGroup::Global);
+    assert_eq!(
+        app.selected_skill().map(|s| s.name.as_str()),
+        Some("globex")
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn both_group_boxes_render_when_one_is_empty() {
+    use skillsdash::ui::app::SkillGroup;
+
+    // A project with skills but NO global skills (HOME points at an empty dir).
+    let dir = temp_project("empty-global");
+    let home = dir.join("emptyhome");
+    fs::create_dir_all(&home).unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+
+    // Both group sections exist; global is present but empty.
+    let sections = app.grouped_sections();
+    let groups: Vec<SkillGroup> = sections.iter().map(|(g, _)| *g).collect();
+    assert_eq!(groups, vec![SkillGroup::Global, SkillGroup::Project]);
+    let global = sections
+        .iter()
+        .find(|(g, _)| *g == SkillGroup::Global)
+        .unwrap();
+    assert!(global.1.is_empty(), "no global skills in this fixture");
+
+    // Renders both boxes (empty global box included) without panicking.
+    let controller = Controller::new();
+    draw(&app, &controller);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn create_form_prefills_scope_from_focused_group() {
+    use skillsdash::model::Scope;
+    use skillsdash::ui::app::{FormKind, SkillGroup};
+
+    // Project + global skills so both boxes are populated and Tab can move focus.
+    let dir = temp_project("prefill");
+    let home = dir.join("fakehome");
+    let global = home.join(".claude/skills/globex");
+    fs::create_dir_all(&global).unwrap();
+    fs::write(
+        global.join("SKILL.md"),
+        "---\nname: globex\ndescription: a global skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let mut app = App::new(dir.clone());
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let mut controller = Controller::new();
+
+    // Startup focus is the global box (global section renders first/top) ->
+    // `a` prefills the scope selection to global only.
+    assert_eq!(app.focused_group, SkillGroup::Global);
+    controller.handle_key(&mut app, press('a'));
+    let form = app.form.as_ref().expect("create form open");
+    assert_eq!(form.kind, FormKind::Create);
+    assert_eq!(form.selected_scopes(), vec![Scope::Global]);
+    controller.handle_key(&mut app, key(KeyCode::Esc));
+
+    // Focus the project box, then `a` prefills scope = project only.
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.focused_group, SkillGroup::Project);
+    controller.handle_key(&mut app, press('a'));
+    let form = app.form.as_ref().expect("create form open");
+    assert_eq!(form.selected_scopes(), vec![Scope::Project]);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn toggle_grouping_collapses_to_single_section() {
+    let dir = temp_project("toggle-group");
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    assert!(app.grouped, "grouping is on by default");
+
+    controller.handle_key(&mut app, press('o'));
+    assert!(!app.grouped, "'o' toggles grouping off");
+    assert_eq!(
+        app.grouped_sections().len(),
+        1,
+        "ungrouped view is a single flat section"
+    );
+    draw(&app, &controller);
 
     let _ = fs::remove_dir_all(&dir);
 }

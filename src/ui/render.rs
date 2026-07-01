@@ -1,4 +1,4 @@
-use super::app::{App, FormField, FormKind, Modal, ScopeFilter, Screen};
+use super::app::{App, FormField, FormKind, Modal, Screen, SkillGroup};
 use super::editor::{Editor, VimMode};
 use super::events::Controller;
 use super::market::{Market, MarketFocus};
@@ -101,12 +101,8 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(format!("{count}/{total} skills"), Style::default().fg(DIM)),
         Span::raw("  "),
         Span::styled(
-            format!("scope: {}", app.scope_filter.label()),
-            Style::default().fg(if app.scope_filter == ScopeFilter::All {
-                DIM
-            } else {
-                ACCENT2
-            }),
+            format!("group: {}", if app.grouped { "on" } else { "off" }),
+            Style::default().fg(if app.grouped { ACCENT2 } else { DIM }),
         ),
         Span::raw("  "),
         Span::styled("m marketplace", Style::default().fg(ACCENT2)),
@@ -125,55 +121,135 @@ fn render_list_screen(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_list(f: &mut Frame, app: &App, area: Rect) {
-    let indices = app.filtered_indices();
-    let items: Vec<ListItem> = indices
+    let sections = app.grouped_sections();
+
+    if !app.grouped {
+        // Single flat box, no group boxes.
+        let rows = &sections[0].1;
+        render_section_box(
+            f,
+            app,
+            area,
+            " skills ".to_string(),
+            ACCENT,
+            rows,
+            true,
+            true,
+        );
+        return;
+    }
+
+    // One bordered box per group, always both, stacked vertically. Height is
+    // shared proportionally to each group's skill count so a small (or empty)
+    // group stays small.
+    let constraints: Vec<Constraint> = sections
         .iter()
-        .map(|&i| {
-            let skill = &app.registry.skills[i];
-            list_item(skill)
-        })
+        .map(|(_, rows)| Constraint::Fill((rows.len().max(1)) as u16))
+        .collect();
+    let slots = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (idx, ((group, rows), slot)) in sections.iter().zip(slots.iter()).enumerate() {
+        let color = group_color(*group);
+        let title = format!(" {} ({}) ", group.heading(), rows.len());
+        let focused = app.focused_group == *group;
+        // Show the live search query on the top box only, to avoid repeating it.
+        render_section_box(f, app, *slot, title, color, rows, idx == 0, focused);
+    }
+}
+
+/// Draw one bordered list box for a group. The border brightens when the box
+/// is focused; the selected row is highlighted only when this box is focused
+/// and holds the selection. Empty boxes show a hint. When searching,
+/// `show_search` swaps the group title for the live query.
+#[allow(clippy::too_many_arguments)]
+fn render_section_box(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    title: String,
+    color: Color,
+    rows: &[(usize, usize)],
+    show_search: bool,
+    focused: bool,
+) {
+    let items: Vec<ListItem> = rows
+        .iter()
+        .map(|&(_, registry_index)| list_item(&app.registry.skills[registry_index]))
         .collect();
 
     let mut state = ListState::default();
-    if !indices.is_empty() {
-        state.select(Some(app.selected.min(indices.len() - 1)));
+    if focused {
+        if let Some(pos) = rows
+            .iter()
+            .position(|&(skill_index, _)| skill_index == app.selected)
+        {
+            state.select(Some(pos));
+        }
     }
 
-    let search_hint = match (&app.search, app.search_active) {
-        (Some(q), true) => format!(" search: {q}▏"),
-        (Some(q), false) if !q.is_empty() => format!(" /{q} "),
-        _ => " skills ".to_string(),
+    let title = if show_search && app.search_active {
+        search_title(app)
+    } else {
+        title
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if app.search_active { WARN } else { ACCENT }))
-        .title(Span::styled(
-            search_hint,
-            Style::default().fg(if app.search_active { WARN } else { ACCENT }),
-        ));
+    let block = list_block(app, &title, color, focused);
+    f.render_widget(block.clone(), area);
 
-    let list = List::default()
-        .items(items)
-        .block(block)
-        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▌ ");
-
-    f.render_stateful_widget(list, area, &mut state);
-
-    if indices.is_empty() {
+    if rows.is_empty() {
         let msg = if app.search.as_deref().unwrap_or("").is_empty() {
-            "no skills found — press a to create one"
+            "no skills here — press a to create one"
         } else {
             "no matches"
         };
-        let inner = Rect {
-            x: area.x + 2,
-            y: area.y + area.height / 2,
-            width: area.width.saturating_sub(4),
-            height: 1,
-        };
-        f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
+        let inner = block.inner(area);
+        if inner.height > 0 {
+            f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
+        }
+        return;
+    }
+
+    // No highlight symbol: it would reserve a left gutter and shift every row
+    // in the focused box right. The background highlight marks the active item.
+    let list = List::default()
+        .items(items)
+        .block(block)
+        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD));
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn list_block(app: &App, title: &str, color: Color, focused: bool) -> Block<'static> {
+    let color = if app.search_active {
+        WARN
+    } else if focused {
+        color
+    } else {
+        FAINT
+    };
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(
+            title.to_string(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ))
+}
+
+fn search_title(app: &App) -> String {
+    match (&app.search, app.search_active) {
+        (Some(q), true) => format!(" search: {q}▏"),
+        (Some(q), false) if !q.is_empty() => format!(" /{q} "),
+        _ => " skills ".to_string(),
+    }
+}
+
+fn group_color(group: SkillGroup) -> Color {
+    match group {
+        SkillGroup::Project => ACCENT2,
+        SkillGroup::Global => ACCENT,
     }
 }
 
@@ -418,20 +494,24 @@ fn render_form_modal(f: &mut Frame, app: &App, area: Rect) {
 
     if form.kind == FormKind::Create {
         lines.push(Line::from(""));
-        lines.push(toggle_line(
+        lines.push(checkbox_row(
             "provider",
-            form.provider.label(),
+            &Provider::ALL.map(|p| p.label()),
+            &form.providers,
+            form.provider_cursor,
             form.field == FormField::Provider,
         ));
-        lines.push(toggle_line(
+        lines.push(checkbox_row(
             "scope",
-            form.scope.label(),
+            &Scope::ALL.map(|s| s.label()),
+            &form.scopes,
+            form.scope_cursor,
             form.field == FormField::Scope,
         ));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "tab next · enter save · esc cancel · ←/→ toggle",
+        "tab next · ←/→ move · space toggle · enter save · esc cancel",
         Style::default().fg(DIM),
     )));
 
@@ -458,20 +538,39 @@ fn field_line(label: &str, value: &str, active: bool) -> Line<'static> {
     ])
 }
 
-fn toggle_line(label: &str, value: &str, active: bool) -> Line<'static> {
+/// A multi-select row: a label followed by one checkbox chip per option.
+/// `checked` marks selected options; `cursor` is the focused chip; `active`
+/// means this row currently has keyboard focus.
+fn checkbox_row(
+    label: &str,
+    options: &[&str],
+    checked: &[bool],
+    cursor: usize,
+    active: bool,
+) -> Line<'static> {
     let marker = if active { "▸ " } else { "  " };
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(marker, Style::default().fg(ACCENT)),
         Span::styled(format!("{label}: "), Style::default().fg(DIM)),
-        Span::styled(
-            format!("[ {value} ]"),
-            if active {
-                Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(DIM)
-            },
-        ),
-    ])
+    ];
+    for (i, opt) in options.iter().enumerate() {
+        let is_checked = checked.get(i).copied().unwrap_or(false);
+        let on_cursor = active && i == cursor;
+        let mark = if is_checked { "✓" } else { " " };
+        let text = format!("[{mark}] {opt}");
+        let style = if on_cursor {
+            Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)
+        } else if is_checked {
+            Style::default().fg(ACCENT2)
+        } else {
+            Style::default().fg(DIM)
+        };
+        spans.push(Span::styled(text, style));
+        if i + 1 < options.len() {
+            spans.push(Span::raw("  "));
+        }
+    }
+    Line::from(spans)
 }
 
 fn render_delete_modal(f: &mut Frame, app: &App, area: Rect) {
@@ -1018,7 +1117,8 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("g g / G", "jump to top / bottom"),
         ("ctrl-d / ctrl-u", "half-page down / up"),
         ("/ then type", "filter · esc clears · n/N cycle"),
-        ("tab", "cycle scope filter (all/global/project)"),
+        ("tab", "switch between project / global boxes"),
+        ("o", "toggle grouping by scope (project / global)"),
         ("enter / l", "open detail · h / esc back"),
         ("a", "create new skill"),
         ("e", "edit SKILL.md body (built-in vim editor)"),
@@ -1123,7 +1223,7 @@ fn render_status(
     } else {
         let hint = match app.screen {
             Screen::List => {
-                " j/k move · / search · a new · e edit · s share · x delete · ? help · q quit"
+                " j/k move · tab switch box · / search · a new · e edit · s share · x delete · ? help"
             }
             Screen::Detail => " j/k scroll · e edit · f frontmatter · s share · x delete · h back",
             Screen::Help => " esc close",

@@ -1,5 +1,5 @@
 use super::actions::{self, ShareMethod};
-use super::app::{App, FormField, FormKind, FormState, Modal, Screen};
+use super::app::{App, FormField, FormKind, FormState, Modal, Screen, SkillGroup};
 use super::editor::{Editor, EditorSignal};
 use super::market::{JobEvent, Market, MarketFocus};
 use crate::model::{Provider, Scope};
@@ -72,18 +72,34 @@ impl Controller {
             app.pending_g = false;
             if key.code == KeyCode::Char('g') {
                 app.select_first();
+                app.sync_focus_to_selection();
                 return;
             }
         }
 
         match key.code {
-            KeyCode::Char('d') if ctrl => app.move_selection(10),
-            KeyCode::Char('u') if ctrl => app.move_selection(-10),
+            KeyCode::Char('d') if ctrl => {
+                app.move_selection(10);
+                app.sync_focus_to_selection();
+            }
+            KeyCode::Char('u') if ctrl => {
+                app.move_selection(-10);
+                app.sync_focus_to_selection();
+            }
             KeyCode::Char('q') => app.should_quit = true,
-            KeyCode::Char('j') | KeyCode::Down => app.move_selection(1),
-            KeyCode::Char('k') | KeyCode::Up => app.move_selection(-1),
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.move_selection(1);
+                app.sync_focus_to_selection();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.move_selection(-1);
+                app.sync_focus_to_selection();
+            }
             KeyCode::Char('g') => app.pending_g = true,
-            KeyCode::Char('G') => app.select_last(),
+            KeyCode::Char('G') => {
+                app.select_last();
+                app.sync_focus_to_selection();
+            }
             KeyCode::Char('/') => {
                 app.search_active = true;
                 app.search = Some(String::new());
@@ -96,9 +112,29 @@ impl Controller {
                     app.clamp_selection();
                 }
             }
-            KeyCode::Tab | KeyCode::Char('t') => {
-                app.scope_filter = app.scope_filter.next();
+            KeyCode::Tab | KeyCode::BackTab => app.focus_other_group(),
+            KeyCode::Char('o') => {
+                let name = app.selected_skill().map(|s| s.name.clone());
+                app.grouped = !app.grouped;
+                if let Some(name) = name {
+                    if let Some(pos) = app
+                        .filtered_indices()
+                        .iter()
+                        .position(|&i| app.registry.skills[i].name == name)
+                    {
+                        app.selected = pos;
+                    }
+                }
                 app.clamp_selection();
+                app.sync_focus_to_selection();
+                app.set_status(
+                    if app.grouped {
+                        "grouped by scope"
+                    } else {
+                        "grouping off"
+                    },
+                    false,
+                );
             }
             KeyCode::Enter | KeyCode::Char('l') => {
                 if app.selected_skill().is_some() {
@@ -160,6 +196,7 @@ impl Controller {
             return;
         }
         app.move_selection(dir);
+        app.sync_focus_to_selection();
     }
 
     fn handle_detail(&mut self, app: &mut App, key: KeyEvent) {
@@ -367,16 +404,30 @@ impl Controller {
     }
 
     fn open_create_form(&mut self, app: &mut App) {
+        // Prefill the scope from the focused group box so `a` creates where the
+        // user is looking (project box -> project, global box -> global).
+        let scope = match app.focused_group {
+            SkillGroup::Project => Scope::Project,
+            SkillGroup::Global => Scope::Global,
+        };
+        let mut providers = [false; Provider::ALL.len()];
+        providers[provider_index(Provider::Claude)] = true;
+        let mut scopes = [false; Scope::ALL.len()];
+        scopes[scope_index(scope)] = true;
         app.form = Some(FormState {
             kind: FormKind::Create,
             name: String::new(),
             description: String::new(),
             provider: Provider::Claude,
-            scope: Scope::Global,
+            scope,
             field: FormField::Name,
             editing_skill: None,
             target_provider: Provider::Claude,
-            target_scope: Scope::Global,
+            target_scope: scope,
+            providers,
+            scopes,
+            provider_cursor: 0,
+            scope_cursor: scope_index(scope),
         });
         app.prev_screen = app.screen;
         app.screen = Screen::Form;
@@ -399,6 +450,10 @@ impl Controller {
             editing_skill: Some(skill.name.clone()),
             target_provider: instance.provider,
             target_scope: instance.scope,
+            providers: [false; Provider::ALL.len()],
+            scopes: [false; Scope::ALL.len()],
+            provider_cursor: 0,
+            scope_cursor: 0,
         });
         app.prev_screen = app.screen;
         app.screen = Screen::Form;
@@ -446,36 +501,34 @@ impl Controller {
                 }
                 _ => {}
             },
-            FormField::Provider => {
-                if matches!(
-                    key.code,
-                    KeyCode::Char(' ')
-                        | KeyCode::Left
-                        | KeyCode::Right
-                        | KeyCode::Char('h')
-                        | KeyCode::Char('l')
-                ) {
-                    form.provider = match form.provider {
-                        Provider::Claude => Provider::Agents,
-                        Provider::Agents => Provider::Claude,
-                    };
+            FormField::Provider => match key.code {
+                KeyCode::Left | KeyCode::Char('h') => {
+                    form.provider_cursor =
+                        (form.provider_cursor + form.providers.len() - 1) % form.providers.len();
                 }
-            }
-            FormField::Scope => {
-                if matches!(
-                    key.code,
-                    KeyCode::Char(' ')
-                        | KeyCode::Left
-                        | KeyCode::Right
-                        | KeyCode::Char('h')
-                        | KeyCode::Char('l')
-                ) {
-                    form.scope = match form.scope {
-                        Scope::Global => Scope::Project,
-                        Scope::Project => Scope::Global,
-                    };
+                KeyCode::Right | KeyCode::Char('l') => {
+                    form.provider_cursor = (form.provider_cursor + 1) % form.providers.len();
                 }
-            }
+                KeyCode::Char(' ') => {
+                    let i = form.provider_cursor;
+                    form.providers[i] = !form.providers[i];
+                }
+                _ => {}
+            },
+            FormField::Scope => match key.code {
+                KeyCode::Left | KeyCode::Char('h') => {
+                    form.scope_cursor =
+                        (form.scope_cursor + form.scopes.len() - 1) % form.scopes.len();
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    form.scope_cursor = (form.scope_cursor + 1) % form.scopes.len();
+                }
+                KeyCode::Char(' ') => {
+                    let i = form.scope_cursor;
+                    form.scopes[i] = !form.scopes[i];
+                }
+                _ => {}
+            },
         }
     }
 
@@ -485,23 +538,50 @@ impl Controller {
         };
         match form.kind {
             FormKind::Create => {
-                let result = actions::create_skill(
-                    &app.registry,
-                    &form.name,
-                    &form.description,
-                    form.provider,
-                    form.scope,
-                );
-                match result {
-                    Ok(_) => {
-                        let name = form.name.trim().to_string();
+                let providers = form.selected_providers();
+                let scopes = form.selected_scopes();
+                if providers.is_empty() {
+                    app.open_message("create failed", "select at least one provider", true);
+                    return;
+                }
+                if scopes.is_empty() {
+                    app.open_message("create failed", "select at least one scope", true);
+                    return;
+                }
+                let name = form.name.clone();
+                let description = form.description.clone();
+                let mut created = 0usize;
+                let mut err = None;
+                'outer: for &provider in &providers {
+                    for &scope in &scopes {
+                        match actions::create_skill(
+                            &app.registry,
+                            &name,
+                            &description,
+                            provider,
+                            scope,
+                        ) {
+                            Ok(_) => created += 1,
+                            Err(e) => {
+                                err = Some(e.to_string());
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+                match err {
+                    None => {
+                        let name = name.trim().to_string();
                         app.form = None;
                         app.screen = app.prev_screen;
                         app.reload();
                         select_by_name(app, &name);
-                        app.set_status(format!("created {name}"), false);
+                        app.set_status(format!("created {name} in {created} location(s)"), false);
                     }
-                    Err(e) => app.open_message("create failed", e.to_string(), true),
+                    Some(e) => {
+                        app.reload();
+                        app.open_message("create failed", e, true);
+                    }
                 }
             }
             FormKind::EditFrontmatter => {
@@ -843,4 +923,15 @@ fn select_by_name(app: &mut App, name: &str) {
     {
         app.selected = pos;
     }
+}
+
+fn provider_index(provider: Provider) -> usize {
+    Provider::ALL
+        .iter()
+        .position(|&p| p == provider)
+        .unwrap_or(0)
+}
+
+fn scope_index(scope: Scope) -> usize {
+    Scope::ALL.iter().position(|&s| s == scope).unwrap_or(0)
 }
