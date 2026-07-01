@@ -212,11 +212,12 @@ fn render_section_box(
         return;
     }
 
+    // No highlight symbol: it would reserve a left gutter and shift every row
+    // in the focused box right. The background highlight marks the active item.
     let list = List::default()
         .items(items)
         .block(block)
-        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▌ ");
+        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD));
     f.render_stateful_widget(list, area, &mut state);
 }
 
