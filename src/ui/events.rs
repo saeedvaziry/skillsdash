@@ -169,8 +169,12 @@ impl Controller {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
                 app.screen = Screen::List;
             }
-            KeyCode::Char('j') | KeyCode::Down => app.detail_scroll = app.detail_scroll.saturating_add(1),
-            KeyCode::Char('k') | KeyCode::Up => app.detail_scroll = app.detail_scroll.saturating_sub(1),
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.detail_scroll = app.detail_scroll.saturating_add(1)
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.detail_scroll = app.detail_scroll.saturating_sub(1)
+            }
             KeyCode::Char('d') if ctrl => app.detail_scroll = app.detail_scroll.saturating_add(10),
             KeyCode::Char('u') if ctrl => app.detail_scroll = app.detail_scroll.saturating_sub(10),
             KeyCode::Char('g') => app.detail_scroll = 0,
@@ -241,9 +245,7 @@ impl Controller {
                 KeyCode::Char('d') if ctrl => market.move_selection(10),
                 KeyCode::Char('u') if ctrl => market.move_selection(-10),
                 KeyCode::Char('g') => market.selected = 0,
-                KeyCode::Char('G') => {
-                    market.selected = market.results.len().saturating_sub(1)
-                }
+                KeyCode::Char('G') => market.selected = market.results.len().saturating_sub(1),
                 KeyCode::Enter | KeyCode::Char('l') => market.start_fetch(),
                 KeyCode::Char('i') => self.begin_install(app),
                 _ => {}
@@ -447,7 +449,14 @@ impl Controller {
                 _ => {}
             },
             FormField::Provider => {
-                if matches!(key.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l')) {
+                if matches!(
+                    key.code,
+                    KeyCode::Char(' ')
+                        | KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Char('h')
+                        | KeyCode::Char('l')
+                ) {
                     form.provider = match form.provider {
                         Provider::Claude => Provider::Agents,
                         Provider::Agents => Provider::Claude,
@@ -455,7 +464,14 @@ impl Controller {
                 }
             }
             FormField::Scope => {
-                if matches!(key.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l')) {
+                if matches!(
+                    key.code,
+                    KeyCode::Char(' ')
+                        | KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Char('h')
+                        | KeyCode::Char('l')
+                ) {
                     form.scope = match form.scope {
                         Scope::Global => Scope::Project,
                         Scope::Project => Scope::Global,
@@ -491,7 +507,8 @@ impl Controller {
                 }
             }
             FormKind::EditFrontmatter => {
-                let (Some(_), Some(skill)) = (form.editing_skill.as_ref(), app.selected_skill()) else {
+                let (Some(_), Some(skill)) = (form.editing_skill.as_ref(), app.selected_skill())
+                else {
                     return;
                 };
                 let targets: Vec<_> = skill.instances.iter().map(|i| i.skill_md.clone()).collect();
@@ -523,8 +540,11 @@ impl Controller {
         let Some(skill) = app.selected_skill() else {
             return;
         };
-        let targets: Vec<(Provider, Scope)> =
-            skill.instances.iter().map(|i| (i.provider, i.scope)).collect();
+        let targets: Vec<(Provider, Scope)> = skill
+            .instances
+            .iter()
+            .map(|i| (i.provider, i.scope))
+            .collect();
         app.modal = Modal::ConfirmDelete {
             skill_name: skill.name.clone(),
             targets,
@@ -539,7 +559,8 @@ impl Controller {
         let mut options = Vec::new();
         for provider in Provider::ALL {
             for scope in Scope::ALL {
-                if !skill.has(provider, scope) && app.registry.skills_dir(provider, scope).is_some() {
+                if !skill.has(provider, scope) && app.registry.skills_dir(provider, scope).is_some()
+                {
                     options.push((provider, scope));
                 }
             }
@@ -621,18 +642,33 @@ impl Controller {
                             *method_choice = None;
                             app.modal = modal;
                         }
-                        KeyCode::Char('h') | KeyCode::Char('l') | KeyCode::Left | KeyCode::Right
-                        | KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Tab => {
+                        KeyCode::Char('h')
+                        | KeyCode::Char('l')
+                        | KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Char('j')
+                        | KeyCode::Char('k')
+                        | KeyCode::Tab => {
                             let cur = method_choice.unwrap_or(0);
                             *method_choice = Some(if cur == 0 { 1 } else { 0 });
                             app.modal = modal;
                         }
                         KeyCode::Char('c') => {
                             *method_choice = Some(0);
-                            self.perform_share(app, skill_name, options[*cursor], ShareMethod::Copy);
+                            self.perform_share(
+                                app,
+                                skill_name,
+                                options[*cursor],
+                                ShareMethod::Copy,
+                            );
                         }
                         KeyCode::Char('s') => {
-                            self.perform_share(app, skill_name, options[*cursor], ShareMethod::Symlink);
+                            self.perform_share(
+                                app,
+                                skill_name,
+                                options[*cursor],
+                                ShareMethod::Symlink,
+                            );
                         }
                         KeyCode::Enter => {
                             let method = if method_choice == &Some(1) {
@@ -702,10 +738,20 @@ impl Controller {
             );
             return;
         };
-        match actions::install_skill(&app.registry, skill_name, content, provider, scope, overwrite) {
+        match actions::install_skill(
+            &app.registry,
+            skill_name,
+            content,
+            provider,
+            scope,
+            overwrite,
+        ) {
             Ok(_) => {
                 app.reload();
-                app.set_status(format!("installed {skill_name} → {provider}/{scope}"), false);
+                app.set_status(
+                    format!("installed {skill_name} → {provider}/{scope}"),
+                    false,
+                );
             }
             Err(e) => {
                 let msg = e.to_string();
@@ -768,10 +814,7 @@ impl Controller {
             Ok(_) => {
                 app.reload();
                 select_by_name(app, skill_name);
-                app.set_status(
-                    format!("shared to {}/{}", target.0, target.1),
-                    false,
-                );
+                app.set_status(format!("shared to {}/{}", target.0, target.1), false);
             }
             Err(e) => app.open_message("share failed", e.to_string(), true),
         }

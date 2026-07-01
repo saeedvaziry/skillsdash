@@ -165,7 +165,9 @@ impl App {
 
     pub fn selected_skill(&self) -> Option<&Skill> {
         let indices = self.filtered_indices();
-        indices.get(self.selected).map(|&i| &self.registry.skills[i])
+        indices
+            .get(self.selected)
+            .map(|&i| &self.registry.skills[i])
     }
 
     pub fn clamp_selection(&mut self) {
@@ -224,7 +226,12 @@ impl App {
         self.status = None;
     }
 
-    pub fn open_message(&mut self, title: impl Into<String>, body: impl Into<String>, is_error: bool) {
+    pub fn open_message(
+        &mut self,
+        title: impl Into<String>,
+        body: impl Into<String>,
+        is_error: bool,
+    ) {
         self.modal = Modal::Message {
             title: title.into(),
             body: body.into(),

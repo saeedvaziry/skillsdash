@@ -61,11 +61,14 @@ impl Registry {
             match scan_root(root) {
                 Ok(found) => {
                     for (instance, doc) in found {
-                        let entry = merged.entry(name_key(&instance, &doc)).or_insert_with(|| Skill {
-                            name: doc.name.clone(),
-                            description: doc.description.clone(),
-                            instances: Vec::new(),
-                        });
+                        let entry =
+                            merged
+                                .entry(name_key(&instance, &doc))
+                                .or_insert_with(|| Skill {
+                                    name: doc.name.clone(),
+                                    description: doc.description.clone(),
+                                    instances: Vec::new(),
+                                });
                         if entry.description.is_empty() && !doc.description.is_empty() {
                             entry.description = doc.description.clone();
                         }
@@ -81,7 +84,8 @@ impl Registry {
         }
 
         self.skills = merged.into_values().collect();
-        self.skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.skills
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         self.warnings = warnings;
     }
 

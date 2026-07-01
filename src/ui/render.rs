@@ -1,4 +1,4 @@
-use super::app::{App, FormField, FormKind, Modal, Screen, ScopeFilter};
+use super::app::{App, FormField, FormKind, Modal, ScopeFilter, Screen};
 use super::editor::{Editor, VimMode};
 use super::events::Controller;
 use super::market::{Market, MarketFocus};
@@ -76,7 +76,10 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         let title = Line::from(vec![
             Span::styled(
                 " skills.sh ",
-                Style::default().bg(ACCENT2).fg(BADGE_FG).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .bg(ACCENT2)
+                    .fg(BADGE_FG)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
             Span::styled("marketplace", Style::default().fg(DIM)),
@@ -87,16 +90,23 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let count = app.visible_count();
     let total = app.registry.skills.len();
     let title = Line::from(vec![
-        Span::styled(" skillsdash ", Style::default().bg(ACCENT).fg(BADGE_FG).add_modifier(Modifier::BOLD)),
-        Span::raw(" "),
         Span::styled(
-            format!("{count}/{total} skills"),
-            Style::default().fg(DIM),
+            " skillsdash ",
+            Style::default()
+                .bg(ACCENT)
+                .fg(BADGE_FG)
+                .add_modifier(Modifier::BOLD),
         ),
+        Span::raw(" "),
+        Span::styled(format!("{count}/{total} skills"), Style::default().fg(DIM)),
         Span::raw("  "),
         Span::styled(
             format!("scope: {}", app.scope_filter.label()),
-            Style::default().fg(if app.scope_filter == ScopeFilter::All { DIM } else { ACCENT2 }),
+            Style::default().fg(if app.scope_filter == ScopeFilter::All {
+                DIM
+            } else {
+                ACCENT2
+            }),
         ),
         Span::raw("  "),
         Span::styled("m marketplace", Style::default().fg(ACCENT2)),
@@ -138,7 +148,10 @@ fn render_list(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if app.search_active { WARN } else { ACCENT }))
-        .title(Span::styled(search_hint, Style::default().fg(if app.search_active { WARN } else { ACCENT })));
+        .title(Span::styled(
+            search_hint,
+            Style::default().fg(if app.search_active { WARN } else { ACCENT }),
+        ));
 
     let list = List::default()
         .items(items)
@@ -160,10 +173,7 @@ fn render_list(f: &mut Frame, app: &App, area: Rect) {
             width: area.width.saturating_sub(4),
             height: 1,
         };
-        f.render_widget(
-            Paragraph::new(msg).style(Style::default().fg(DIM)),
-            inner,
-        );
+        f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
     }
 }
 
@@ -230,13 +240,18 @@ fn render_side_preview(f: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(Span::styled(line, Style::default().fg(FG))));
     }
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("available in:", Style::default().fg(DIM))));
+    lines.push(Line::from(Span::styled(
+        "available in:",
+        Style::default().fg(DIM),
+    )));
     for instance in &skill.instances {
         let mut spans = vec![
             Span::raw("  "),
             Span::styled(
                 format!("{}", instance.provider),
-                Style::default().fg(provider_color(instance.provider)).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(provider_color(instance.provider))
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(format!(" / {}", instance.scope), Style::default().fg(DIM)),
         ];
@@ -256,7 +271,12 @@ fn render_side_preview(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(DIM),
     )));
 
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn render_detail(f: &mut Frame, app: &App, area: Rect) {
@@ -282,12 +302,17 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
         meta.push(Line::from(line));
     }
     meta.push(Line::from(""));
-    meta.push(Line::from(Span::styled("instances", Style::default().fg(DIM))));
+    meta.push(Line::from(Span::styled(
+        "instances",
+        Style::default().fg(DIM),
+    )));
     for instance in &skill.instances {
         meta.push(Line::from(vec![
             Span::styled(
                 format!("{}", instance.provider),
-                Style::default().fg(provider_color(instance.provider)).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(provider_color(instance.provider))
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(format!(" / {}", instance.scope), Style::default().fg(DIM)),
             if instance.is_symlink {
@@ -307,7 +332,12 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(ACCENT))
         .padding(Padding::horizontal(1))
         .title(" details ");
-    f.render_widget(Paragraph::new(meta).block(meta_block).wrap(Wrap { trim: false }), cols[0]);
+    f.render_widget(
+        Paragraph::new(meta)
+            .block(meta_block)
+            .wrap(Wrap { trim: false }),
+        cols[0],
+    );
 
     let body = skill
         .primary()
@@ -345,9 +375,7 @@ fn render_editor(f: &mut Frame, editor: &Editor, area: Rect) {
 
     let mut textarea = editor.textarea.clone();
     textarea.set_block(block);
-    textarea.set_cursor_style(
-        Style::default().bg(mode_color).fg(BADGE_FG),
-    );
+    textarea.set_cursor_style(Style::default().bg(mode_color).fg(BADGE_FG));
     textarea.set_line_number_style(Style::default().fg(DIM));
     f.render_widget(&textarea, area);
 }
@@ -370,12 +398,23 @@ fn render_form_modal(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT))
         .padding(Padding::uniform(1))
-        .title(Span::styled(title, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            title,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
 
     let mut lines = Vec::new();
-    lines.push(field_line("name", &form.name, form.field == FormField::Name));
+    lines.push(field_line(
+        "name",
+        &form.name,
+        form.field == FormField::Name,
+    ));
     lines.push(Line::from(""));
-    lines.push(field_line("description", &form.description, form.field == FormField::Description));
+    lines.push(field_line(
+        "description",
+        &form.description,
+        form.field == FormField::Description,
+    ));
 
     if form.kind == FormKind::Create {
         lines.push(Line::from(""));
@@ -384,7 +423,11 @@ fn render_form_modal(f: &mut Frame, app: &App, area: Rect) {
             form.provider.label(),
             form.field == FormField::Provider,
         ));
-        lines.push(toggle_line("scope", form.scope.label(), form.field == FormField::Scope));
+        lines.push(toggle_line(
+            "scope",
+            form.scope.label(),
+            form.field == FormField::Scope,
+        ));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
@@ -392,7 +435,12 @@ fn render_form_modal(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(DIM),
     )));
 
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
 }
 
 fn field_line(label: &str, value: &str, active: bool) -> Line<'static> {
@@ -427,23 +475,38 @@ fn toggle_line(label: &str, value: &str, active: bool) -> Line<'static> {
 }
 
 fn render_delete_modal(f: &mut Frame, app: &App, area: Rect) {
-    let Modal::ConfirmDelete { skill_name, targets, cursor } = &app.modal else {
+    let Modal::ConfirmDelete {
+        skill_name,
+        targets,
+        cursor,
+    } = &app.modal
+    else {
         return;
     };
     let height = (targets.len() as u16) + 8;
-    let rect = centered(area, 62.min(area.width.saturating_sub(4)), height.min(area.height.saturating_sub(2)));
+    let rect = centered(
+        area,
+        62.min(area.width.saturating_sub(4)),
+        height.min(area.height.saturating_sub(2)),
+    );
     f.render_widget(Clear, rect);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ERR))
         .padding(Padding::uniform(1))
-        .title(Span::styled(" delete skill ", Style::default().fg(ERR).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            " delete skill ",
+            Style::default().fg(ERR).add_modifier(Modifier::BOLD),
+        ));
 
     let mut lines = vec![
         Line::from(vec![
             Span::raw("remove "),
-            Span::styled(skill_name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                skill_name.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" from:"),
         ]),
         Line::from(""),
@@ -464,7 +527,10 @@ fn render_delete_modal(f: &mut Frame, app: &App, area: Rect) {
     }
     let all_selected = *cursor == targets.len();
     lines.push(Line::from(vec![
-        Span::styled(if all_selected { "▸ " } else { "  " }, Style::default().fg(ERR)),
+        Span::styled(
+            if all_selected { "▸ " } else { "  " },
+            Style::default().fg(ERR),
+        ),
         Span::styled(
             "all instances",
             if all_selected {
@@ -480,27 +546,48 @@ fn render_delete_modal(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(DIM),
     )));
 
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
 }
 
 fn render_share_modal(f: &mut Frame, app: &App, area: Rect) {
-    let Modal::Share { skill_name, options, cursor, method_choice } = &app.modal else {
+    let Modal::Share {
+        skill_name,
+        options,
+        cursor,
+        method_choice,
+    } = &app.modal
+    else {
         return;
     };
     let height = (options.len() as u16) + 11;
-    let rect = centered(area, 60.min(area.width.saturating_sub(4)), height.min(area.height.saturating_sub(2)));
+    let rect = centered(
+        area,
+        60.min(area.width.saturating_sub(4)),
+        height.min(area.height.saturating_sub(2)),
+    );
     f.render_widget(Clear, rect);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT2))
         .padding(Padding::uniform(1))
-        .title(Span::styled(" share skill ", Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            " share skill ",
+            Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD),
+        ));
 
     let mut lines = vec![
         Line::from(vec![
             Span::raw("make "),
-            Span::styled(skill_name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                skill_name.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" available in:"),
         ]),
         Line::from(""),
@@ -508,7 +595,10 @@ fn render_share_modal(f: &mut Frame, app: &App, area: Rect) {
     for (idx, (provider, scope)) in options.iter().enumerate() {
         let selected = *cursor == idx;
         lines.push(Line::from(vec![
-            Span::styled(if selected { "▸ " } else { "  " }, Style::default().fg(ACCENT2)),
+            Span::styled(
+                if selected { "▸ " } else { "  " },
+                Style::default().fg(ACCENT2),
+            ),
             Span::styled(
                 format!("{provider} / {scope}"),
                 if selected {
@@ -528,7 +618,10 @@ fn render_share_modal(f: &mut Frame, app: &App, area: Rect) {
         )));
     } else {
         let choice = method_choice.unwrap_or(0);
-        lines.push(Line::from(Span::styled("method:", Style::default().fg(DIM))));
+        lines.push(Line::from(Span::styled(
+            "method:",
+            Style::default().fg(DIM),
+        )));
         lines.push(Line::from(vec![
             method_chip("copy", choice == 0),
             Span::raw("  "),
@@ -541,14 +634,22 @@ fn render_share_modal(f: &mut Frame, app: &App, area: Rect) {
         )));
     }
 
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
 }
 
 fn method_chip(label: &str, active: bool) -> Span<'static> {
     if active {
         Span::styled(
             format!(" {label} "),
-            Style::default().bg(ACCENT2).fg(BADGE_FG).add_modifier(Modifier::BOLD),
+            Style::default()
+                .bg(ACCENT2)
+                .fg(BADGE_FG)
+                .add_modifier(Modifier::BOLD),
         )
     } else {
         Span::styled(format!(" {label} "), Style::default().fg(DIM))
@@ -556,7 +657,12 @@ fn method_chip(label: &str, active: bool) -> Span<'static> {
 }
 
 fn render_message_modal(f: &mut Frame, app: &App, area: Rect) {
-    let Modal::Message { title, body, is_error } = &app.modal else {
+    let Modal::Message {
+        title,
+        body,
+        is_error,
+    } = &app.modal
+    else {
         return;
     };
     let color = if *is_error { ERR } else { ACCENT };
@@ -566,13 +672,21 @@ fn render_message_modal(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
         .padding(Padding::uniform(1))
-        .title(Span::styled(format!(" {title} "), Style::default().fg(color).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ));
     let lines = vec![
         Line::from(body.clone()),
         Line::from(""),
         Line::from(Span::styled("enter/esc dismiss", Style::default().fg(DIM))),
     ];
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
 }
 
 fn render_marketplace(f: &mut Frame, market: &Market, area: Rect) {
@@ -604,7 +718,10 @@ fn render_market_search(f: &mut Frame, market: &Market, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if focused { WARN } else { DIM }))
         .padding(Padding::horizontal(1))
-        .title(Span::styled(" search ", Style::default().fg(if focused { WARN } else { DIM })));
+        .title(Span::styled(
+            " search ",
+            Style::default().fg(if focused { WARN } else { DIM }),
+        ));
     f.render_widget(Paragraph::new(Line::from(text)).block(block), area);
 }
 
@@ -618,7 +735,10 @@ fn render_market_results(f: &mut Frame, market: &Market, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if focused { ACCENT } else { DIM }))
-        .title(Span::styled(title, Style::default().fg(if focused { ACCENT } else { DIM })));
+        .title(Span::styled(
+            title,
+            Style::default().fg(if focused { ACCENT } else { DIM }),
+        ));
 
     if market.results.is_empty() {
         let msg = if market.last_query.is_empty() {
@@ -629,7 +749,9 @@ fn render_market_results(f: &mut Frame, market: &Market, area: Rect) {
             "no results"
         };
         f.render_widget(
-            Paragraph::new(msg).style(Style::default().fg(DIM)).block(block),
+            Paragraph::new(msg)
+                .style(Style::default().fg(DIM))
+                .block(block),
             area,
         );
         return;
@@ -648,9 +770,15 @@ fn render_market_results(f: &mut Frame, market: &Market, area: Rect) {
 
 fn market_result_item(skill: &MarketSkill) -> ListItem<'static> {
     let line1 = Line::from(vec![
-        Span::styled(skill.name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            skill.name.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
-        Span::styled(format!("↓{}", human_count(skill.installs)), Style::default().fg(ACCENT2)),
+        Span::styled(
+            format!("↓{}", human_count(skill.installs)),
+            Style::default().fg(ACCENT2),
+        ),
     ]);
     let line2 = Line::from(Span::styled(
         format!("  {}", skill.source),
@@ -665,11 +793,16 @@ fn render_market_detail(f: &mut Frame, market: &Market, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if focused { ACCENT } else { DIM }))
         .padding(Padding::horizontal(1))
-        .title(Span::styled(" skill ", Style::default().fg(if focused { ACCENT } else { DIM })));
+        .title(Span::styled(
+            " skill ",
+            Style::default().fg(if focused { ACCENT } else { DIM }),
+        ));
 
     let Some(skill) = market.selected_skill() else {
         f.render_widget(
-            Paragraph::new("select a result").style(Style::default().fg(DIM)).block(block),
+            Paragraph::new("select a result")
+                .style(Style::default().fg(DIM))
+                .block(block),
             area,
         );
         return;
@@ -677,9 +810,13 @@ fn render_market_detail(f: &mut Frame, market: &Market, area: Rect) {
 
     if market.fetching {
         f.render_widget(
-            Paragraph::new(format!("{} loading {}…", market.spinner_frame(), skill.name))
-                .style(Style::default().fg(WARN))
-                .block(block),
+            Paragraph::new(format!(
+                "{} loading {}…",
+                market.spinner_frame(),
+                skill.name
+            ))
+            .style(Style::default().fg(WARN))
+            .block(block),
             area,
         );
         return;
@@ -701,13 +838,20 @@ fn render_market_detail(f: &mut Frame, market: &Market, area: Rect) {
         Line::from(""),
     ];
 
-    match market.detail.as_ref().filter(|_| market.detail_for(&skill.name).is_some()) {
+    match market
+        .detail
+        .as_ref()
+        .filter(|_| market.detail_for(&skill.name).is_some())
+    {
         Some(content) => {
             let body = content
                 .skill_md()
                 .map(|f| String::from_utf8_lossy(&f.bytes).to_string())
                 .unwrap_or_default();
-            header.push(Line::from(Span::styled("SKILL.md:", Style::default().fg(DIM))));
+            header.push(Line::from(Span::styled(
+                "SKILL.md:",
+                Style::default().fg(DIM),
+            )));
             let mut lines = header;
             lines.extend(markdown_text(&body).lines);
             f.render_widget(
@@ -724,7 +868,9 @@ fn render_market_detail(f: &mut Frame, market: &Market, area: Rect) {
                 Style::default().fg(DIM),
             )));
             f.render_widget(
-                Paragraph::new(header).block(block).wrap(Wrap { trim: false }),
+                Paragraph::new(header)
+                    .block(block)
+                    .wrap(Wrap { trim: false }),
                 area,
             );
         }
@@ -732,22 +878,37 @@ fn render_market_detail(f: &mut Frame, market: &Market, area: Rect) {
 }
 
 fn render_install_modal(f: &mut Frame, app: &App, area: Rect) {
-    let Modal::InstallTarget { skill_name, options, cursor } = &app.modal else {
+    let Modal::InstallTarget {
+        skill_name,
+        options,
+        cursor,
+    } = &app.modal
+    else {
         return;
     };
     let height = (options.len() as u16) + 8;
-    let rect = centered(area, 56.min(area.width.saturating_sub(4)), height.min(area.height.saturating_sub(2)));
+    let rect = centered(
+        area,
+        56.min(area.width.saturating_sub(4)),
+        height.min(area.height.saturating_sub(2)),
+    );
     f.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT2))
         .padding(Padding::uniform(1))
-        .title(Span::styled(" install ", Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            " install ",
+            Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD),
+        ));
 
     let mut lines = vec![
         Line::from(vec![
             Span::raw("install "),
-            Span::styled(skill_name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                skill_name.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" into:"),
         ]),
         Line::from(""),
@@ -755,7 +916,10 @@ fn render_install_modal(f: &mut Frame, app: &App, area: Rect) {
     for (idx, (provider, scope)) in options.iter().enumerate() {
         let selected = *cursor == idx;
         lines.push(Line::from(vec![
-            Span::styled(if selected { "▸ " } else { "  " }, Style::default().fg(ACCENT2)),
+            Span::styled(
+                if selected { "▸ " } else { "  " },
+                Style::default().fg(ACCENT2),
+            ),
             Span::styled(
                 format!("{provider} / {scope}"),
                 if selected {
@@ -771,11 +935,21 @@ fn render_install_modal(f: &mut Frame, app: &App, area: Rect) {
         "j/k move · enter install · esc cancel",
         Style::default().fg(DIM),
     )));
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
 }
 
 fn render_install_overwrite_modal(f: &mut Frame, app: &App, area: Rect) {
-    let Modal::ConfirmInstallOverwrite { skill_name, provider, scope } = &app.modal else {
+    let Modal::ConfirmInstallOverwrite {
+        skill_name,
+        provider,
+        scope,
+    } = &app.modal
+    else {
         return;
     };
     let rect = centered(area, 56.min(area.width.saturating_sub(4)), 9);
@@ -784,16 +958,33 @@ fn render_install_overwrite_modal(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(WARN))
         .padding(Padding::uniform(1))
-        .title(Span::styled(" overwrite? ", Style::default().fg(WARN).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            " overwrite? ",
+            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+        ));
     let lines = vec![
         Line::from(vec![
-            Span::styled(skill_name.clone(), Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(format!(" already exists in {provider}/{scope}."), Style::default().fg(FG)),
+            Span::styled(
+                skill_name.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" already exists in {provider}/{scope}."),
+                Style::default().fg(FG),
+            ),
         ]),
         Line::from(""),
-        Line::from(Span::styled("y overwrite · n / esc cancel", Style::default().fg(DIM))),
+        Line::from(Span::styled(
+            "y overwrite · n / esc cancel",
+            Style::default().fg(DIM),
+        )),
     ];
-    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
 }
 
 fn human_count(n: u64) -> String {
@@ -807,13 +998,20 @@ fn human_count(n: u64) -> String {
 }
 
 fn render_help(f: &mut Frame, area: Rect) {
-    let rect = centered(area, 68.min(area.width.saturating_sub(2)), 30.min(area.height.saturating_sub(2)));
+    let rect = centered(
+        area,
+        68.min(area.width.saturating_sub(2)),
+        30.min(area.height.saturating_sub(2)),
+    );
     f.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT))
         .padding(Padding::uniform(1))
-        .title(Span::styled(" help — vim keys ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            " help — vim keys ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
 
     let rows = [
         ("j / k", "move down / up"),
@@ -841,7 +1039,10 @@ fn render_help(f: &mut Frame, area: Rect) {
         .iter()
         .map(|(k, v)| {
             Line::from(vec![
-                Span::styled(format!("{k:<16}"), Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{k:<16}"),
+                    Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled((*v).to_string(), Style::default().fg(DIM)),
             ])
         })
@@ -849,13 +1050,23 @@ fn render_help(f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(lines).block(block), rect);
 }
 
-fn render_status(f: &mut Frame, app: &App, editor: Option<&Editor>, market: Option<&Market>, area: Rect) {
+fn render_status(
+    f: &mut Frame,
+    app: &App,
+    editor: Option<&Editor>,
+    market: Option<&Market>,
+    area: Rect,
+) {
     let content = if app.screen == Screen::Marketplace {
         let m = market;
         let busy = m.map(|m| m.searching || m.fetching).unwrap_or(false);
         if busy {
             let frame = m.map(|m| m.spinner_frame()).unwrap_or(' ');
-            let what = if m.map(|m| m.searching).unwrap_or(false) { "searching" } else { "downloading" };
+            let what = if m.map(|m| m.searching).unwrap_or(false) {
+                "searching"
+            } else {
+                "downloading"
+            };
             Line::from(Span::styled(
                 format!(" {frame} {what}…"),
                 Style::default().fg(WARN),
@@ -885,11 +1096,14 @@ fn render_status(f: &mut Frame, app: &App, editor: Option<&Editor>, market: Opti
             Line::from(vec![
                 Span::styled(
                     format!(" {} ", mode.label()),
-                    Style::default().bg(match mode {
-                        VimMode::Normal => ACCENT,
-                        VimMode::Insert => ACCENT2,
-                        VimMode::Command => WARN,
-                    }).fg(BADGE_FG).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .bg(match mode {
+                            VimMode::Normal => ACCENT,
+                            VimMode::Insert => ACCENT2,
+                            VimMode::Command => WARN,
+                        })
+                        .fg(BADGE_FG)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
                 Span::styled(cmd, Style::default().fg(WARN)),
@@ -908,7 +1122,9 @@ fn render_status(f: &mut Frame, app: &App, editor: Option<&Editor>, market: Opti
         ))
     } else {
         let hint = match app.screen {
-            Screen::List => " j/k move · / search · a new · e edit · s share · x delete · ? help · q quit",
+            Screen::List => {
+                " j/k move · / search · a new · e edit · s share · x delete · ? help · q quit"
+            }
             Screen::Detail => " j/k scroll · e edit · f frontmatter · s share · x delete · h back",
             Screen::Help => " esc close",
             _ => " esc cancel",
@@ -973,9 +1189,15 @@ fn markdown_text(body: &str) -> Text<'static> {
         }
         let trimmed = line.trim_start();
         if trimmed.starts_with("# ") {
-            lines.push(Line::from(Span::styled(line, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))));
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )));
         } else if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
-            lines.push(Line::from(Span::styled(line, Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD))));
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD),
+            )));
         } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
             lines.push(Line::from(Span::styled(line, Style::default().fg(DIM))));
         } else {

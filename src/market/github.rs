@@ -66,7 +66,12 @@ pub fn dir_files(tree_json: &str, dir: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
-pub fn fetch_skill(http: &dyn Http, owner: &str, repo: &str, skill_id: &str) -> Result<SkillContent> {
+pub fn fetch_skill(
+    http: &dyn Http,
+    owner: &str,
+    repo: &str,
+    skill_id: &str,
+) -> Result<SkillContent> {
     let branch = default_branch(http, owner, repo)?;
     let tree_url =
         format!("https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1");
@@ -86,13 +91,9 @@ pub fn fetch_skill(http: &dyn Http, owner: &str, repo: &str, skill_id: &str) -> 
 
     let mut files = Vec::new();
     for path in file_paths {
-        let raw_url =
-            format!("https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}");
+        let raw_url = format!("https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}");
         let bytes = http.get_bytes(&raw_url)?;
-        let relative = path
-            .strip_prefix(&dir_prefix)
-            .unwrap_or(&path)
-            .to_string();
+        let relative = path.strip_prefix(&dir_prefix).unwrap_or(&path).to_string();
         files.push(SkillFile {
             relative_path: relative,
             bytes,
@@ -145,10 +146,13 @@ mod tests {
     #[test]
     fn lists_only_direct_files() {
         let files = dir_files(ANTHROPIC_TREE, "skills/frontend-design").unwrap();
-        assert_eq!(files, vec![
-            "skills/frontend-design/LICENSE.txt".to_string(),
-            "skills/frontend-design/SKILL.md".to_string(),
-        ]);
+        assert_eq!(
+            files,
+            vec![
+                "skills/frontend-design/LICENSE.txt".to_string(),
+                "skills/frontend-design/SKILL.md".to_string(),
+            ]
+        );
     }
 
     #[test]

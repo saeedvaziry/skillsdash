@@ -148,8 +148,10 @@ impl Market {
                     self.fetching = false;
                     match result {
                         Ok(content) => {
-                            let matches_selection =
-                                self.selected_skill().map(|s| s.id == skill.id).unwrap_or(false);
+                            let matches_selection = self
+                                .selected_skill()
+                                .map(|s| s.id == skill.id)
+                                .unwrap_or(false);
                             if matches_selection {
                                 self.detail = Some(content);
                                 self.focus = MarketFocus::Detail;

@@ -15,13 +15,50 @@ Built with [ratatui](https://ratatui.rs) and [tui-textarea](https://github.com/r
 - Share a skill to a provider or scope it is missing from — your choice of **copy** or **symlink**.
 - **Browse the [skills.sh](https://skills.sh) marketplace** — search, preview a skill's `SKILL.md`, and install it into any provider/scope. Downloads run on a background thread so the UI never blocks.
 
-## Install & run
+## Install
+
+### Homebrew (macOS & Linux)
 
 ```sh
+brew tap saeedvaziry/skillsdash https://github.com/saeedvaziry/skillsdash
+brew install skillsdash
+```
+
+### Arch Linux (AUR)
+
+```sh
+yay -S skillsdash-bin      # or: paru -S skillsdash-bin
+```
+
+### curl (macOS & Linux)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/saeedvaziry/skillsdash/main/install.sh | sh
+```
+
+Installs to `~/.local/bin` (or `/usr/local/bin` if writable). Override with
+`SKILLSDASH_BIN_DIR=/path` or pin a version with `SKILLSDASH_VERSION=1.2.0`.
+The script verifies the SHA-256 of every download.
+
+### From source
+
+```sh
+cargo install --git https://github.com/saeedvaziry/skillsdash
+# or, in a clone:
 cargo run --release
 ```
 
+Prebuilt binaries are published for macOS (arm64, x86_64) and Linux
+(x86_64 gnu, arm64 gnu, x86_64 musl) on every [release](https://github.com/saeedvaziry/skillsdash/releases).
+
+## Run
+
+```sh
+skillsdash
+```
+
 Run it from the directory whose project skills you want to manage.
+`skillsdash --version` and `skillsdash --help` are also available.
 
 ## Keys
 

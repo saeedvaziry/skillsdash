@@ -104,10 +104,7 @@ pub fn parse_search(body: &str) -> Result<Vec<MarketSkill>> {
         let skill_id = str_field(entry, "skillId");
         let name = str_field(entry, "name");
         let source = str_field(entry, "source");
-        let installs = entry
-            .get("installs")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let installs = entry.get("installs").and_then(|v| v.as_u64()).unwrap_or(0);
         if name.is_empty() || id.is_empty() {
             continue;
         }
@@ -123,7 +120,10 @@ pub fn parse_search(body: &str) -> Result<Vec<MarketSkill>> {
 }
 
 fn str_field(v: &serde_json::Value, key: &str) -> String {
-    v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn urlencode(s: &str) -> String {
@@ -158,7 +158,10 @@ mod tests {
         assert_eq!(skills.len(), 2);
         assert_eq!(skills[0].name, "frontend-design");
         assert_eq!(skills[0].installs, 612248);
-        assert_eq!(skills[0].owner_repo(), Some(("anthropics".to_string(), "skills".to_string())));
+        assert_eq!(
+            skills[0].owner_repo(),
+            Some(("anthropics".to_string(), "skills".to_string()))
+        );
         assert_eq!(skills[1].source, "vercel-labs/agent-eval");
     }
 

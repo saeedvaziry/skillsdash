@@ -4,7 +4,27 @@ use skillsdash::tui;
 use skillsdash::ui::{render, App, Controller};
 use std::time::Duration;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn main() -> Result<()> {
+    if let Some(arg) = std::env::args().nth(1) {
+        match arg.as_str() {
+            "-V" | "--version" => {
+                println!("skillsdash {VERSION}");
+                return Ok(());
+            }
+            "-h" | "--help" => {
+                print_help();
+                return Ok(());
+            }
+            other => {
+                eprintln!("skillsdash: unknown argument '{other}'");
+                print_help();
+                std::process::exit(2);
+            }
+        }
+    }
+
     let project_dir = std::env::current_dir().unwrap_or_else(|_| ".".into());
     let mut app = App::new(project_dir);
     let mut controller = Controller::new();
@@ -16,11 +36,22 @@ fn main() -> Result<()> {
     result
 }
 
-fn run(
-    terminal: &mut tui::Tui,
-    app: &mut App,
-    controller: &mut Controller,
-) -> Result<()> {
+fn print_help() {
+    println!(
+        "skillsdash {VERSION}
+Cross-platform TUI for managing AI skills across Claude and Agents providers.
+
+USAGE:
+    skillsdash            launch the TUI in the current directory
+    skillsdash --version  print version and exit
+    skillsdash --help     print this help and exit
+
+Skills are read from ~/.claude/skills, ~/.agents/skills, and the current
+project's .claude/.agents directories. Press ? inside the app for keys."
+    );
+}
+
+fn run(terminal: &mut tui::Tui, app: &mut App, controller: &mut Controller) -> Result<()> {
     loop {
         controller.tick(app);
         terminal.draw(|f| render::render(f, app, controller))?;

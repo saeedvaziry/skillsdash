@@ -57,28 +57,37 @@ fn renders_every_screen_without_panic() {
     draw(&app, &controller);
     controller.handle_key(&mut app, press('x'));
     draw(&app, &controller);
-    controller.handle_key(&mut app, KeyEvent {
-        code: KeyCode::Esc,
-        modifiers: KeyModifiers::NONE,
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
+    controller.handle_key(
+        &mut app,
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        },
+    );
 
     controller.handle_key(&mut app, press('?'));
     draw(&app, &controller);
-    controller.handle_key(&mut app, KeyEvent {
-        code: KeyCode::Esc,
-        modifiers: KeyModifiers::NONE,
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
+    controller.handle_key(
+        &mut app,
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        },
+    );
 
-    controller.handle_key(&mut app, KeyEvent {
-        code: KeyCode::Enter,
-        modifiers: KeyModifiers::NONE,
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
+    controller.handle_key(
+        &mut app,
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        },
+    );
     draw(&app, &controller);
 
     controller.handle_key(&mut app, press('e'));
@@ -95,7 +104,11 @@ fn vim_navigation_moves_selection() {
     for name in ["alpha", "beta", "gamma"] {
         let d = claude.join(name);
         fs::create_dir_all(&d).unwrap();
-        fs::write(d.join("SKILL.md"), format!("---\nname: {name}\ndescription: d\n---\nbody\n")).unwrap();
+        fs::write(
+            d.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: d\n---\nbody\n"),
+        )
+        .unwrap();
     }
     let mut app = App::new(dir.clone());
     let mut controller = Controller::new();
@@ -133,12 +146,15 @@ fn marketplace_opens_and_renders() {
     assert_eq!(controller.market.as_ref().unwrap().query, "react");
     draw(&app, &controller);
 
-    controller.handle_key(&mut app, KeyEvent {
-        code: KeyCode::Esc,
-        modifiers: KeyModifiers::NONE,
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
+    controller.handle_key(
+        &mut app,
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        },
+    );
     draw(&app, &controller);
 
     let _ = fs::remove_dir_all(&dir);
@@ -160,13 +176,25 @@ fn create_flow_writes_skill_to_project_scope() {
     controller.handle_key(&mut app, key(KeyCode::Enter));
 
     let expected = dir.join(".claude/skills/brand-new/SKILL.md");
-    assert!(expected.exists(), "create flow should write {}", expected.display());
+    assert!(
+        expected.exists(),
+        "create flow should write {}",
+        expected.display()
+    );
     let content = fs::read_to_string(&expected).unwrap();
     assert!(content.contains("name: brand-new"));
     assert!(content.contains("a freshly made skill"));
 
-    let skill = app.registry.skills.iter().find(|s| s.name == "brand-new").unwrap();
-    assert!(skill.has(skillsdash::model::Provider::Claude, skillsdash::model::Scope::Project));
+    let skill = app
+        .registry
+        .skills
+        .iter()
+        .find(|s| s.name == "brand-new")
+        .unwrap();
+    assert!(skill.has(
+        skillsdash::model::Provider::Claude,
+        skillsdash::model::Scope::Project
+    ));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -197,8 +225,14 @@ fn editor_edits_and_saves_body() {
 
     let md = dir.join(".claude/skills/demo/SKILL.md");
     let content = fs::read_to_string(&md).unwrap();
-    assert!(content.contains("APPENDED LINE"), "editor save should persist body edits:\n{content}");
-    assert!(content.contains("name: demo"), "frontmatter must be preserved");
+    assert!(
+        content.contains("APPENDED LINE"),
+        "editor save should persist body edits:\n{content}"
+    );
+    assert!(
+        content.contains("name: demo"),
+        "frontmatter must be preserved"
+    );
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -210,7 +244,11 @@ fn search_filters_list() {
     for name in ["alpha", "beta", "gamma"] {
         let d = claude.join(name);
         fs::create_dir_all(&d).unwrap();
-        fs::write(d.join("SKILL.md"), format!("---\nname: {name}\ndescription: d\n---\nbody\n")).unwrap();
+        fs::write(
+            d.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: d\n---\nbody\n"),
+        )
+        .unwrap();
     }
     let mut app = App::new(dir.clone());
     let mut controller = Controller::new();
@@ -231,11 +269,22 @@ fn search_filters_list() {
         .iter()
         .map(|&i| app.registry.skills[i].name.clone())
         .collect();
-    assert!(names.iter().any(|n| n == "beta"), "beta must survive the filter, got {names:?}");
+    assert!(
+        names.iter().any(|n| n == "beta"),
+        "beta must survive the filter, got {names:?}"
+    );
     for name in &names {
-        let s = app.registry.skills.iter().find(|s| &s.name == name).unwrap();
+        let s = app
+            .registry
+            .skills
+            .iter()
+            .find(|s| &s.name == name)
+            .unwrap();
         let hay = format!("{} {}", s.name.to_lowercase(), s.description.to_lowercase());
-        assert!(hay.contains("beta"), "every match must contain the query: {name}");
+        assert!(
+            hay.contains("beta"),
+            "every match must contain the query: {name}"
+        );
     }
 
     let _ = fs::remove_dir_all(&dir);

@@ -58,7 +58,14 @@ pub fn create_skill(
         bail!("skill '{name}' already exists at {}", dir.display());
     }
 
-    let body = format!("# {name}\n\n{}\n", if description.is_empty() { "Describe what this skill does." } else { description });
+    let body = format!(
+        "# {name}\n\n{}\n",
+        if description.is_empty() {
+            "Describe what this skill does."
+        } else {
+            description
+        }
+    );
     let doc = SkillDoc::new(name, description, body);
     fsops::write_skill_md(&dir, &doc.to_markdown()?)?;
     Ok(dir)

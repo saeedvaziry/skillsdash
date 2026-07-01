@@ -54,11 +54,22 @@ impl Drop for Fixture {
 fn create_then_appears_in_registry() {
     let fx = Fixture::new("create");
     let reg = fx.registry();
-    let dir = actions::create_skill(&reg, "my-skill", "does a thing", Provider::Claude, Scope::Global).unwrap();
+    let dir = actions::create_skill(
+        &reg,
+        "my-skill",
+        "does a thing",
+        Provider::Claude,
+        Scope::Global,
+    )
+    .unwrap();
     assert!(dir.join("SKILL.md").exists());
 
     let reg2 = fx.registry();
-    let skill = reg2.skills.iter().find(|s| s.name == "my-skill").expect("skill present");
+    let skill = reg2
+        .skills
+        .iter()
+        .find(|s| s.name == "my-skill")
+        .expect("skill present");
     assert_eq!(skill.description, "does a thing");
     assert!(skill.has(Provider::Claude, Scope::Global));
     assert!(!skill.has(Provider::Agents, Scope::Global));
@@ -71,7 +82,9 @@ fn create_rejects_duplicate_and_bad_name() {
     actions::create_skill(&reg, "dup", "d", Provider::Claude, Scope::Global).unwrap();
     let reg = fx.registry();
     assert!(actions::create_skill(&reg, "dup", "d", Provider::Claude, Scope::Global).is_err());
-    assert!(actions::create_skill(&reg, "bad name!", "d", Provider::Claude, Scope::Global).is_err());
+    assert!(
+        actions::create_skill(&reg, "bad name!", "d", Provider::Claude, Scope::Global).is_err()
+    );
     assert!(actions::create_skill(&reg, "  ", "d", Provider::Claude, Scope::Global).is_err());
 }
 
@@ -79,10 +92,19 @@ fn create_rejects_duplicate_and_bad_name() {
 fn share_by_copy_creates_independent_copy() {
     let fx = Fixture::new("copy");
     let reg = fx.registry();
-    let src = actions::create_skill(&reg, "shared", "orig", Provider::Claude, Scope::Global).unwrap();
+    let src =
+        actions::create_skill(&reg, "shared", "orig", Provider::Claude, Scope::Global).unwrap();
 
     let reg = fx.registry();
-    actions::share_skill(&reg, &src, Provider::Agents, Scope::Global, "shared", ShareMethod::Copy).unwrap();
+    actions::share_skill(
+        &reg,
+        &src,
+        Provider::Agents,
+        Scope::Global,
+        "shared",
+        ShareMethod::Copy,
+    )
+    .unwrap();
 
     let reg = fx.registry();
     let skill = reg.skills.iter().find(|s| s.name == "shared").unwrap();
@@ -102,10 +124,19 @@ fn share_by_copy_creates_independent_copy() {
 fn share_by_symlink_tracks_source() {
     let fx = Fixture::new("symlink");
     let reg = fx.registry();
-    let src = actions::create_skill(&reg, "linked", "orig", Provider::Claude, Scope::Global).unwrap();
+    let src =
+        actions::create_skill(&reg, "linked", "orig", Provider::Claude, Scope::Global).unwrap();
 
     let reg = fx.registry();
-    actions::share_skill(&reg, &src, Provider::Agents, Scope::Global, "linked", ShareMethod::Symlink).unwrap();
+    actions::share_skill(
+        &reg,
+        &src,
+        Provider::Agents,
+        Scope::Global,
+        "linked",
+        ShareMethod::Symlink,
+    )
+    .unwrap();
 
     let reg = fx.registry();
     let skill = reg.skills.iter().find(|s| s.name == "linked").unwrap();
@@ -141,11 +172,23 @@ fn delete_removes_only_targeted_instances() {
     let reg = fx.registry();
     let src = actions::create_skill(&reg, "victim", "d", Provider::Claude, Scope::Global).unwrap();
     let reg = fx.registry();
-    actions::share_skill(&reg, &src, Provider::Agents, Scope::Global, "victim", ShareMethod::Copy).unwrap();
+    actions::share_skill(
+        &reg,
+        &src,
+        Provider::Agents,
+        Scope::Global,
+        "victim",
+        ShareMethod::Copy,
+    )
+    .unwrap();
 
     let reg = fx.registry();
     let skill = reg.skills.iter().find(|s| s.name == "victim").unwrap();
-    let agents_dir = skill.instance(Provider::Agents, Scope::Global).unwrap().dir.clone();
+    let agents_dir = skill
+        .instance(Provider::Agents, Scope::Global)
+        .unwrap()
+        .dir
+        .clone();
     actions::delete_instances(&[agents_dir]).unwrap();
 
     let reg = fx.registry();
@@ -158,9 +201,13 @@ fn delete_removes_only_targeted_instances() {
 fn project_scope_is_discovered() {
     let fx = Fixture::new("project");
     let reg = fx.registry();
-    let dir = actions::create_skill(&reg, "proj-skill", "d", Provider::Claude, Scope::Project).unwrap();
+    let dir =
+        actions::create_skill(&reg, "proj-skill", "d", Provider::Claude, Scope::Project).unwrap();
     assert!(dir.join("SKILL.md").exists());
-    assert!(dir_contains(&fx.base.join("proj/.claude/skills"), "proj-skill"));
+    assert!(dir_contains(
+        &fx.base.join("proj/.claude/skills"),
+        "proj-skill"
+    ));
 
     let reg = fx.registry();
     let skill = reg.skills.iter().find(|s| s.name == "proj-skill").unwrap();
@@ -187,7 +234,15 @@ fn install_writes_all_files() {
     let fx = Fixture::new("install");
     let reg = fx.registry();
     let content = sample_content();
-    let dir = actions::install_skill(&reg, "netskill", &content, Provider::Claude, Scope::Global, false).unwrap();
+    let dir = actions::install_skill(
+        &reg,
+        "netskill",
+        &content,
+        Provider::Claude,
+        Scope::Global,
+        false,
+    )
+    .unwrap();
     assert!(dir.join("SKILL.md").exists());
     assert!(dir.join("LICENSE.txt").exists());
 
@@ -202,10 +257,34 @@ fn install_refuses_clobber_without_overwrite() {
     let fx = Fixture::new("install-clobber");
     let reg = fx.registry();
     let content = sample_content();
-    actions::install_skill(&reg, "netskill", &content, Provider::Claude, Scope::Global, false).unwrap();
+    actions::install_skill(
+        &reg,
+        "netskill",
+        &content,
+        Provider::Claude,
+        Scope::Global,
+        false,
+    )
+    .unwrap();
     let reg = fx.registry();
-    assert!(actions::install_skill(&reg, "netskill", &content, Provider::Claude, Scope::Global, false).is_err());
-    assert!(actions::install_skill(&reg, "netskill", &content, Provider::Claude, Scope::Global, true).is_ok());
+    assert!(actions::install_skill(
+        &reg,
+        "netskill",
+        &content,
+        Provider::Claude,
+        Scope::Global,
+        false
+    )
+    .is_err());
+    assert!(actions::install_skill(
+        &reg,
+        "netskill",
+        &content,
+        Provider::Claude,
+        Scope::Global,
+        true
+    )
+    .is_ok());
 }
 
 #[test]
@@ -214,16 +293,27 @@ fn install_rejects_path_traversal() {
     let reg = fx.registry();
     let evil = SkillContent {
         files: vec![
-            SkillFile { relative_path: "SKILL.md".to_string(), bytes: b"---\nname: x\ndescription: d\n---\n".to_vec() },
-            SkillFile { relative_path: "../../escape.txt".to_string(), bytes: b"pwned".to_vec() },
+            SkillFile {
+                relative_path: "SKILL.md".to_string(),
+                bytes: b"---\nname: x\ndescription: d\n---\n".to_vec(),
+            },
+            SkillFile {
+                relative_path: "../../escape.txt".to_string(),
+                bytes: b"pwned".to_vec(),
+            },
         ],
     };
-    assert!(actions::install_skill(&reg, "x", &evil, Provider::Claude, Scope::Global, false).is_err());
+    assert!(
+        actions::install_skill(&reg, "x", &evil, Provider::Claude, Scope::Global, false).is_err()
+    );
     assert!(!fx.base.join("escape.txt").exists());
 }
 
 fn dir_contains(dir: &Path, name: &str) -> bool {
     fs::read_dir(dir)
-        .map(|rd| rd.filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy() == name))
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .any(|e| e.file_name().to_string_lossy() == name)
+        })
         .unwrap_or(false)
 }

@@ -11,7 +11,11 @@ pub struct SkillDoc {
 }
 
 impl SkillDoc {
-    pub fn new(name: impl Into<String>, description: impl Into<String>, body: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        body: impl Into<String>,
+    ) -> Self {
         SkillDoc {
             name: name.into(),
             description: description.into(),
@@ -91,7 +95,10 @@ fn scalar_to_string(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Null => String::new(),
-        _ => serde_norway::to_string(v).unwrap_or_default().trim().to_string(),
+        _ => serde_norway::to_string(v)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     }
 }
 
@@ -123,7 +130,9 @@ fn split_frontmatter(raw: &str) -> Result<(String, String)> {
 
     match rest_start {
         Some(pos) => {
-            let body = after_open[pos..].trim_start_matches(['\r', '\n']).to_string();
+            let body = after_open[pos..]
+                .trim_start_matches(['\r', '\n'])
+                .to_string();
             Ok((fm, body))
         }
         None => Err(anyhow!("frontmatter opened with --- but never closed")),
