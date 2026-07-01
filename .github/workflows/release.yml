@@ -196,6 +196,9 @@ jobs:
         run: |
           bash scripts/update-aur.sh "${{ needs.prepare.outputs.version }}" dist
 
+      - name: Make PKGBUILD readable by the AUR builder user
+        run: chmod -R a+rX packaging/aur
+
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:

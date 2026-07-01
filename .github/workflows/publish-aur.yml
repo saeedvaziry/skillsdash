@@ -1,0 +1,49 @@
+name: Publish AUR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing release version to publish to AUR (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    name: Publish skillsdash-bin to AUR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch release checksums
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p dist
+          base="https://github.com/saeedvaziry/skillsdash/releases/download/v${VERSION}"
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            f="skillsdash-${VERSION}-${target}.tar.gz.sha256"
+            echo "fetching $f"
+            curl -fsSL "${base}/${f}" -o "dist/${f}"
+          done
+
+      - name: Update AUR PKGBUILD
+        run: bash scripts/update-aur.sh "${VERSION}" dist
+
+      - name: Make PKGBUILD readable by the AUR builder user
+        run: chmod -R a+rX packaging/aur
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        with:
+          pkgname: skillsdash-bin
+          pkgbuild: packaging/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ inputs.version }}"
+          updpkgsums: false
