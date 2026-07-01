@@ -493,20 +493,24 @@ fn render_form_modal(f: &mut Frame, app: &App, area: Rect) {
 
     if form.kind == FormKind::Create {
         lines.push(Line::from(""));
-        lines.push(toggle_line(
+        lines.push(checkbox_row(
             "provider",
-            form.provider.label(),
+            &Provider::ALL.map(|p| p.label()),
+            &form.providers,
+            form.provider_cursor,
             form.field == FormField::Provider,
         ));
-        lines.push(toggle_line(
+        lines.push(checkbox_row(
             "scope",
-            form.scope.label(),
+            &Scope::ALL.map(|s| s.label()),
+            &form.scopes,
+            form.scope_cursor,
             form.field == FormField::Scope,
         ));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "tab next · enter save · esc cancel · ←/→ toggle",
+        "tab next · ←/→ move · space toggle · enter save · esc cancel",
         Style::default().fg(DIM),
     )));
 
@@ -533,20 +537,39 @@ fn field_line(label: &str, value: &str, active: bool) -> Line<'static> {
     ])
 }
 
-fn toggle_line(label: &str, value: &str, active: bool) -> Line<'static> {
+/// A multi-select row: a label followed by one checkbox chip per option.
+/// `checked` marks selected options; `cursor` is the focused chip; `active`
+/// means this row currently has keyboard focus.
+fn checkbox_row(
+    label: &str,
+    options: &[&str],
+    checked: &[bool],
+    cursor: usize,
+    active: bool,
+) -> Line<'static> {
     let marker = if active { "▸ " } else { "  " };
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(marker, Style::default().fg(ACCENT)),
         Span::styled(format!("{label}: "), Style::default().fg(DIM)),
-        Span::styled(
-            format!("[ {value} ]"),
-            if active {
-                Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(DIM)
-            },
-        ),
-    ])
+    ];
+    for (i, opt) in options.iter().enumerate() {
+        let is_checked = checked.get(i).copied().unwrap_or(false);
+        let on_cursor = active && i == cursor;
+        let mark = if is_checked { "✓" } else { " " };
+        let text = format!("[{mark}] {opt}");
+        let style = if on_cursor {
+            Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)
+        } else if is_checked {
+            Style::default().fg(ACCENT2)
+        } else {
+            Style::default().fg(DIM)
+        };
+        spans.push(Span::styled(text, style));
+        if i + 1 < options.len() {
+            spans.push(Span::raw("  "));
+        }
+    }
+    Line::from(spans)
 }
 
 fn render_delete_modal(f: &mut Frame, app: &App, area: Rect) {

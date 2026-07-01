@@ -25,8 +25,8 @@ impl SkillGroup {
 
     fn order(self) -> u8 {
         match self {
-            SkillGroup::Project => 0,
-            SkillGroup::Global => 1,
+            SkillGroup::Global => 0,
+            SkillGroup::Project => 1,
         }
     }
 }
@@ -96,6 +96,34 @@ pub struct FormState {
     pub editing_skill: Option<String>,
     pub target_provider: Provider,
     pub target_scope: Scope,
+    /// Create-form multi-select. Indexed by `Provider::ALL` / `Scope::ALL`.
+    pub providers: [bool; Provider::ALL.len()],
+    pub scopes: [bool; Scope::ALL.len()],
+    /// Sub-cursor over the chips of the Provider / Scope rows.
+    pub provider_cursor: usize,
+    pub scope_cursor: usize,
+}
+
+impl FormState {
+    pub fn selected_providers(&self) -> Vec<Provider> {
+        Provider::ALL
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| self.providers[*i])
+            .map(|(_, p)| p)
+            .collect()
+    }
+
+    pub fn selected_scopes(&self) -> Vec<Scope> {
+        Scope::ALL
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| self.scopes[*i])
+            .map(|(_, s)| s)
+            .collect()
+    }
 }
 
 pub struct App {
@@ -166,9 +194,9 @@ impl App {
         indices
     }
 
-    /// Skills partitioned into their groups, in display order (project first).
-    /// Each entry is `(group, rows)` where every row is `(skill_index,
-    /// registry_index)`; `skill_index` is the position within
+    /// Skills partitioned into their groups, in display order (global first,
+    /// then project). Each entry is `(group, rows)` where every row is
+    /// `(skill_index, registry_index)`; `skill_index` is the position within
     /// `filtered_indices()`. When grouping is on, BOTH groups are always
     /// returned even if a group is empty, so both boxes render. When grouping
     /// is off, a single `Global`-labeled section holds everything (the label is
@@ -192,7 +220,7 @@ impl App {
                 SkillGroup::Global => global.push((skill_index, registry_index)),
             }
         }
-        vec![(SkillGroup::Project, project), (SkillGroup::Global, global)]
+        vec![(SkillGroup::Global, global), (SkillGroup::Project, project)]
     }
 
     pub fn visible_count(&self) -> usize {
