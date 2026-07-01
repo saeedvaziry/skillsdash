@@ -22,7 +22,8 @@ impl Registry {
     pub fn discover(project_dir: &Path) -> Registry {
         let mut roots = Vec::new();
 
-        if let Some(home) = dirs::home_dir() {
+        let home = dirs::home_dir();
+        if let Some(home) = &home {
             for provider in Provider::ALL {
                 roots.push(Root {
                     provider,
@@ -32,12 +33,19 @@ impl Registry {
             }
         }
 
-        for provider in Provider::ALL {
-            roots.push(Root {
-                provider,
-                scope: Scope::Project,
-                skills_dir: project_dir.join(provider.dir_name()).join("skills"),
-            });
+        let project_is_home = home
+            .as_deref()
+            .map(|h| same_dir(h, project_dir))
+            .unwrap_or(false);
+
+        if !project_is_home {
+            for provider in Provider::ALL {
+                roots.push(Root {
+                    provider,
+                    scope: Scope::Project,
+                    skills_dir: project_dir.join(provider.dir_name()).join("skills"),
+                });
+            }
         }
 
         Registry::from_roots(roots)
@@ -96,6 +104,13 @@ impl Registry {
 
     pub fn skills_dir(&self, provider: Provider, scope: Scope) -> Option<PathBuf> {
         self.root(provider, scope).map(|r| r.skills_dir.clone())
+    }
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 
@@ -176,6 +191,26 @@ fn scan_root(root: &Root) -> Result<Vec<(SkillInstance, SkillDoc)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn home_as_project_has_no_project_roots() {
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => return,
+        };
+        let reg = Registry::discover(&home);
+        assert!(
+            !reg.roots.iter().any(|r| r.scope == Scope::Project),
+            "running in the home directory must not create project roots"
+        );
+        assert!(reg.roots.iter().all(|r| r.scope == Scope::Global));
+    }
+
+    #[test]
+    fn distinct_project_dir_keeps_project_roots() {
+        let reg = Registry::discover(Path::new("/tmp/nonexistent-skillsdash-test"));
+        assert!(reg.roots.iter().any(|r| r.scope == Scope::Project));
+    }
 
     #[test]
     fn merges_same_name_across_roots() {
