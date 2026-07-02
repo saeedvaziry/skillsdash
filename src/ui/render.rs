@@ -1543,11 +1543,20 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("r", "reload from disk"),
         ("q", "quit"),
         ("", ""),
-        ("editor:", "i/a/o insert · esc normal · q quit · ctrl+s save"),
-        ("editor:", "dd cut line · yy yank · p paste · u undo · :w :q"),
+        (
+            "editor:",
+            "i/a/o insert · esc normal · q quit · ctrl+s save",
+        ),
+        (
+            "editor:",
+            "dd cut line · yy yank · p paste · u undo · :w :q",
+        ),
         ("", ""),
         ("market:", "type + enter search · j/k move · enter view"),
-        ("market:", "i install (space picks locations) · / search · esc/q back"),
+        (
+            "market:",
+            "i install (space picks locations) · / search · esc/q back",
+        ),
         ("", ""),
         (
             "harness:",

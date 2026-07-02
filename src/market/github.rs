@@ -42,7 +42,12 @@ fn skill_md_dirs(tree_json: &str) -> Result<Vec<String>> {
         .filter(|e| e.get("type").and_then(|t| t.as_str()) != Some("tree"))
         .filter_map(|e| e.get("path").and_then(|p| p.as_str()))
         .filter(|p| *p == "SKILL.md" || p.ends_with("/SKILL.md"))
-        .map(|p| p.strip_suffix("SKILL.md").unwrap().trim_end_matches('/').to_string())
+        .map(|p| {
+            p.strip_suffix("SKILL.md")
+                .unwrap()
+                .trim_end_matches('/')
+                .to_string()
+        })
         .collect();
 
     dirs.sort_by_key(|p| p.matches('/').count());
@@ -246,8 +251,7 @@ mod tests {
     #[test]
     fn resolves_by_frontmatter_name_when_dir_differs() {
         let http = StubHttp {
-            skill_md: "---\nname: remotion-best-practices\ndescription: d\n---\nbody\n"
-                .to_string(),
+            skill_md: "---\nname: remotion-best-practices\ndescription: d\n---\nbody\n".to_string(),
         };
         let dir = resolve_skill_dir(
             &http,
