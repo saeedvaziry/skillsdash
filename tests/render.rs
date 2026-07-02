@@ -170,6 +170,15 @@ fn commands_view_shows_only_commands_and_creates() {
         cmds.iter().any(|f| f.name == "review.md"),
         "created command should appear in the commands view"
     );
+    let review_pos = cmds
+        .iter()
+        .position(|f| f.name == "review.md")
+        .expect("created command should have a command-view index");
+    assert_eq!(app.harness_selected, review_pos);
+    assert_eq!(
+        app.harness_selected_file().map(|f| f.name.as_str()),
+        Some("review.md")
+    );
     assert!(!cmds.iter().any(|f| f.name == "CLAUDE.md"));
 
     match prev_home {

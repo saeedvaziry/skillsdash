@@ -1085,12 +1085,17 @@ impl Controller {
         match actions::create_command(&app.harness, name, provider, scope) {
             Ok(_) => {
                 app.reload_harness();
-                if let Some(pos) = app.harness.files.iter().position(|f| {
-                    f.kind == HarnessKind::Command
-                        && f.provider == provider
-                        && f.scope == scope
-                        && f.name == format!("{}.md", name.trim())
-                }) {
+                let command_name = format!("{}.md", name.trim());
+                if let Some(pos) = app
+                    .harness_view_files(HarnessKind::Command)
+                    .iter()
+                    .position(|f| {
+                        f.kind == HarnessKind::Command
+                            && f.provider == provider
+                            && f.scope == scope
+                            && f.name == command_name
+                    })
+                {
                     app.harness_selected = pos;
                 }
                 app.set_status(format!("created {}.md", name.trim()), false);

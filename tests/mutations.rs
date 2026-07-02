@@ -484,6 +484,53 @@ fn harness_create_command_and_delete() {
     assert!(!path.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn harness_lists_broken_command_symlink() {
+    let fx = HarnessFixture::new("cmd-broken-link");
+    let reg = fx.registry();
+    let source = actions::create_command(&reg, "review", Provider::Claude, Scope::Project).unwrap();
+
+    let reg = fx.registry();
+    let cmd = reg
+        .files
+        .iter()
+        .find(|f| {
+            f.kind == HarnessKind::Command
+                && f.provider == Provider::Claude
+                && f.scope == Scope::Project
+                && f.name == "review.md"
+        })
+        .unwrap()
+        .clone();
+    let link = actions::link_counterpart(&reg, &cmd, Provider::Agents).unwrap();
+
+    fs::remove_file(&source).unwrap();
+    assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(!link.exists());
+
+    let reg = fx.registry();
+    let broken = reg
+        .files
+        .iter()
+        .find(|f| {
+            f.kind == HarnessKind::Command
+                && f.provider == Provider::Agents
+                && f.scope == Scope::Project
+                && f.name == "review.md"
+        })
+        .expect("broken command symlink should stay listed");
+    assert!(broken.is_symlink);
+    assert!(!broken.exists);
+
+    actions::delete_harness(&broken.path).unwrap();
+    let reg = fx.registry();
+    let recreated =
+        actions::create_command(&reg, "review", Provider::Agents, Scope::Project).unwrap();
+    assert_eq!(recreated, link);
+    assert!(recreated.exists());
+}
+
 #[test]
 fn harness_save_over_symlink_replaces_link_not_target() {
     let fx = HarnessFixture::new("save-symlink");

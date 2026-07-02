@@ -154,17 +154,20 @@ fn scan_commands(root: &HarnessRoot) -> std::io::Result<Vec<HarnessFile>> {
             Err(_) => continue,
         };
         let path = entry.path();
-        let is_file = std::fs::metadata(&path)
-            .map(|m| m.is_file())
-            .unwrap_or(false);
-        if !is_file {
-            continue;
-        }
         let is_md = path
             .extension()
             .map(|e| e.eq_ignore_ascii_case("md"))
             .unwrap_or(false);
         if !is_md {
+            continue;
+        }
+        let is_file_or_symlink = std::fs::symlink_metadata(&path)
+            .map(|m| {
+                let file_type = m.file_type();
+                file_type.is_file() || file_type.is_symlink()
+            })
+            .unwrap_or(false);
+        if !is_file_or_symlink {
             continue;
         }
         let name = path
