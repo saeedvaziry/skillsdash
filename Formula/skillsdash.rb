@@ -1,28 +1,28 @@
 class Skillsdash < Formula
   desc "Cross-platform TUI for managing AI skills across Claude and Agents providers"
   homepage "https://github.com/saeedvaziry/skillsdash"
-  version "0.2.0"
+  version "0.3.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/saeedvaziry/skillsdash/releases/download/v#{version}/skillsdash-#{version}-aarch64-apple-darwin.tar.gz"
-      sha256 "5f3f0f37d9e4f78a91816fb42a0fd8db87374fd8285e0baf9484bc7a7ed3bfea"
+      sha256 "b3d88a46222f7c1e94d6be311731403072008602c4ce8b53c4f96fb9edc08091"
     end
     on_intel do
       url "https://github.com/saeedvaziry/skillsdash/releases/download/v#{version}/skillsdash-#{version}-x86_64-apple-darwin.tar.gz"
-      sha256 "24d659058a35d5a1c13c9d5271af5f933028861470ef5dfbde7b5bf243ce891b"
+      sha256 "3bc263ca0492732e61f0abe7eeb3f474aeb08b54383b49b06e1dde87ecedd4a1"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/saeedvaziry/skillsdash/releases/download/v#{version}/skillsdash-#{version}-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "30d5e0c5528299d38681f21a2964bf537fcb68bd716c80eb3df5984351f55b83"
+      sha256 "59926f57b1002ad3bf56c17482842ef48458f697c8dcecc6661070df52550b00"
     end
     on_intel do
       url "https://github.com/saeedvaziry/skillsdash/releases/download/v#{version}/skillsdash-#{version}-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "2c4b9c6ff9f673242326eb4e62bcb3010c8f16e5de7ceca5a3ea88813c1f9d6a"
+      sha256 "cdde12e59cb77ab69430a3ca9e40b73ffc778da33937060edd4bc53edd66882b"
     end
   end
 
