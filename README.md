@@ -4,6 +4,13 @@
 
 A cross-platform terminal UI for managing AI skills across the **Claude** (`~/.claude/skills`) and **Agents** (`~/.agents/skills`) providers — plus the skills of your current project (`./.claude/skills`, `./.agents/skills`).
 
+Press `h` for the **harness** view to edit each provider's memory file
+(`CLAUDE.md` / `AGENTS.md`, global and project), or `c` for the **commands**
+view to edit slash-command files (`~/.claude/commands`, `./.claude/commands`,
+and the `.agents` equivalents). In either view you can write one provider's file
+and symlink the other to it, so both harnesses share a single source of truth
+(`s`).
+
 ## Install
 
 ### Homebrew (macOS & Linux)

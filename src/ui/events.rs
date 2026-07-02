@@ -1,9 +1,16 @@
 use super::actions::{self, ShareMethod};
 use super::app::{App, FormField, FormKind, FormState, Modal, Screen, SkillGroup};
-use super::editor::{Editor, EditorSignal};
+use super::editor::{Editor, EditorSignal, EditorTarget};
 use super::market::{JobEvent, Market, MarketFocus};
-use crate::model::{Provider, Scope};
+use crate::model::{HarnessKind, Provider, Scope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+enum InstallOutcome {
+    Ok,
+    Exists,
+    Failed(String),
+    NotReady,
+}
 
 pub struct Controller {
     pub editor: Option<Editor>,
@@ -57,6 +64,7 @@ impl Controller {
             Screen::Form => self.handle_form(app, key),
             Screen::Help => self.handle_help(app, key),
             Screen::Marketplace => self.handle_marketplace(app, key),
+            Screen::Harness | Screen::Commands => self.handle_harness(app, key),
         }
     }
 
@@ -148,6 +156,8 @@ impl Controller {
             KeyCode::Char('f') => self.open_frontmatter_form(app),
             KeyCode::Char('s') => self.open_share(app),
             KeyCode::Char('m') | KeyCode::Char('M') => self.open_marketplace(app),
+            KeyCode::Char('h') | KeyCode::Char('H') => self.open_harness(app),
+            KeyCode::Char('c') | KeyCode::Char('C') => self.open_commands(app),
             KeyCode::Char('x') | KeyCode::Char('D') => self.open_delete(app),
             KeyCode::Char('r') => {
                 app.reload();
@@ -244,6 +254,165 @@ impl Controller {
         app.screen = Screen::Marketplace;
     }
 
+    fn open_harness(&mut self, app: &mut App) {
+        app.screen = Screen::Harness;
+        app.harness_selected = 0;
+        app.reload_harness();
+        app.prev_screen = Screen::List;
+    }
+
+    fn open_commands(&mut self, app: &mut App) {
+        app.screen = Screen::Commands;
+        app.harness_selected = 0;
+        app.reload_harness();
+        app.prev_screen = Screen::List;
+    }
+
+    fn handle_harness(&mut self, app: &mut App, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let view = app.screen;
+        let close = match view {
+            Screen::Commands => KeyCode::Char('c'),
+            _ => KeyCode::Char('h'),
+        };
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => app.screen = Screen::List,
+            c if c == close => app.screen = Screen::List,
+            KeyCode::Char('j') | KeyCode::Down => app.harness_move(1),
+            KeyCode::Char('k') | KeyCode::Up => app.harness_move(-1),
+            KeyCode::Char('d') if ctrl => app.harness_move(10),
+            KeyCode::Char('u') if ctrl => app.harness_move(-10),
+            KeyCode::Char('g') => app.harness_selected = 0,
+            KeyCode::Char('G') => app.harness_select_last(),
+            KeyCode::Tab | KeyCode::BackTab => app.harness_focus_other_scope(),
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Char('e') => {
+                self.open_harness_editor(app);
+            }
+            KeyCode::Char('s') => self.open_harness_link(app),
+            KeyCode::Char('a') if view == Screen::Commands => self.open_create_command(app),
+            KeyCode::Char('x') | KeyCode::Char('D') => self.open_harness_delete(app),
+            KeyCode::Char('r') => {
+                app.reload_harness();
+                app.set_status("reloaded", false);
+            }
+            KeyCode::Char('?') => {
+                app.prev_screen = view;
+                app.screen = Screen::Help;
+            }
+            _ => {}
+        }
+    }
+
+    fn open_harness_editor(&mut self, app: &mut App) {
+        let view = app.screen;
+        let Some(file) = app.harness_selected_file() else {
+            return;
+        };
+        let path = file.path.clone();
+        let title = file.name.clone();
+        let file_label = format!("{} · {}", file.provider, file.scope);
+        match actions::read_harness(file) {
+            Ok(body) => {
+                self.editor = Some(Editor::with_target(
+                    path,
+                    title,
+                    file_label,
+                    EditorTarget::PlainFile,
+                    &body,
+                ));
+                app.prev_screen = view;
+                app.screen = Screen::Editor;
+            }
+            Err(e) => app.open_message("cannot open", e.to_string(), true),
+        }
+    }
+
+    fn open_harness_link(&mut self, app: &mut App) {
+        let Some(file) = app.harness_selected_file() else {
+            return;
+        };
+        if !file.path.exists() {
+            app.open_message(
+                "nothing to link",
+                format!(
+                    "{} does not exist yet — edit it first, then link",
+                    file.name
+                ),
+                true,
+            );
+            return;
+        }
+        let other = match file.provider {
+            Provider::Claude => Provider::Agents,
+            Provider::Agents => Provider::Claude,
+        };
+        let target = match actions::counterpart_path(&app.harness, file, other) {
+            Ok(p) => p,
+            Err(e) => {
+                app.open_message("cannot link", e.to_string(), true);
+                return;
+            }
+        };
+        if target.exists() || target.symlink_metadata().is_ok() {
+            app.open_message(
+                "target exists",
+                format!(
+                    "{} already exists for {}/{} — delete it first",
+                    file.name, other, file.scope
+                ),
+                true,
+            );
+            return;
+        }
+        let target_name = match file.kind {
+            HarnessKind::Memory => crate::model::harness::memory_file_name(other).to_string(),
+            HarnessKind::Command => file.name.clone(),
+        };
+        let source_label = format!("{} ({}/{})", file.name, file.provider, file.scope);
+        let target_label = format!("{} ({}/{})", target_name, other, file.scope);
+        let Some(file_index) = app.harness_selected_abs_index() else {
+            return;
+        };
+        app.modal = Modal::LinkHarness {
+            file_index,
+            source_label,
+            target_label,
+            target_provider: other,
+        };
+    }
+
+    fn open_harness_delete(&mut self, app: &mut App) {
+        let Some(file) = app.harness_selected_file() else {
+            return;
+        };
+        if !file.path.exists() && !file.is_symlink {
+            app.set_status("file does not exist", true);
+            return;
+        }
+        let label = format!("{} ({}/{})", file.name, file.provider, file.scope);
+        let is_symlink = file.is_symlink;
+        let Some(file_index) = app.harness_selected_abs_index() else {
+            return;
+        };
+        app.modal = Modal::ConfirmDeleteHarness {
+            file_index,
+            label,
+            is_symlink,
+        };
+    }
+
+    fn open_create_command(&mut self, app: &mut App) {
+        let (provider, scope) = app
+            .harness_selected_file()
+            .map(|f| (f.provider, f.scope))
+            .unwrap_or((Provider::Claude, Scope::Global));
+        app.modal = Modal::CreateCommand {
+            name: String::new(),
+            provider,
+            scope,
+        };
+    }
+
     fn handle_marketplace(&mut self, app: &mut App, key: KeyEvent) {
         let Some(market) = self.market.as_mut() else {
             app.screen = Screen::List;
@@ -334,9 +503,11 @@ impl Controller {
             app.open_message("cannot install", "no writable skills directory found", true);
             return;
         }
+        let checked = vec![false; options.len()];
         app.modal = Modal::InstallTarget {
             skill_name: name,
             options,
+            checked,
             cursor: 0,
         };
     }
@@ -389,10 +560,17 @@ impl Controller {
             return false;
         };
         let body = editor.body();
-        match actions::save_body(&editor.skill_md, &body) {
+        let result = match editor.target {
+            EditorTarget::SkillBody => actions::save_body(&editor.skill_md, &body),
+            EditorTarget::PlainFile => actions::save_harness(&editor.skill_md, &body),
+        };
+        match result {
             Ok(()) => {
                 editor.dirty = false;
-                app.reload();
+                match editor.target {
+                    EditorTarget::SkillBody => app.reload(),
+                    EditorTarget::PlainFile => app.reload_harness(),
+                }
                 app.set_status(format!("saved {}", editor.skill_name), false);
                 true
             }
@@ -763,6 +941,7 @@ impl Controller {
             Modal::InstallTarget {
                 skill_name,
                 options,
+                checked,
                 cursor,
             } => match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => {}
@@ -774,10 +953,22 @@ impl Controller {
                     *cursor = (*cursor + options.len() - 1) % options.len();
                     app.modal = modal;
                 }
-                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') => {
-                    let (provider, scope) = options[*cursor];
+                KeyCode::Char(' ') => {
+                    checked[*cursor] = !checked[*cursor];
+                    app.modal = modal;
+                }
+                KeyCode::Enter | KeyCode::Char('l') => {
+                    let mut chosen: Vec<(Provider, Scope)> = options
+                        .iter()
+                        .zip(checked.iter())
+                        .filter(|(_, &c)| c)
+                        .map(|(&o, _)| o)
+                        .collect();
+                    if chosen.is_empty() {
+                        chosen.push(options[*cursor]);
+                    }
                     let name = skill_name.clone();
-                    self.perform_install(app, &name, provider, scope, false);
+                    self.perform_multi_install(app, &name, &chosen, false);
                 }
                 _ => app.modal = modal,
             },
@@ -785,15 +976,176 @@ impl Controller {
                 skill_name,
                 provider,
                 scope,
+                pending,
             } => match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => {
                     let (name, provider, scope) = (skill_name.clone(), *provider, *scope);
+                    let pending = std::mem::take(pending);
                     self.perform_install(app, &name, provider, scope, true);
+                    self.resume_pending_install(app, &name, pending);
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {
+                    let name = skill_name.clone();
+                    let pending = std::mem::take(pending);
+                    self.resume_pending_install(app, &name, pending);
+                }
+                _ => app.modal = modal,
+            },
+            Modal::LinkHarness {
+                file_index,
+                target_provider,
+                ..
+            } => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    let (idx, other) = (*file_index, *target_provider);
+                    self.perform_link_harness(app, idx, other);
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {}
                 _ => app.modal = modal,
             },
+            Modal::ConfirmDeleteHarness { file_index, .. } => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    let idx = *file_index;
+                    self.perform_delete_harness(app, idx);
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {}
+                _ => app.modal = modal,
+            },
+            Modal::CreateCommand {
+                name,
+                provider,
+                scope,
+            } => match key.code {
+                KeyCode::Esc => {}
+                KeyCode::Enter => {
+                    let (name, provider, scope) = (name.clone(), *provider, *scope);
+                    self.perform_create_command(app, &name, provider, scope);
+                }
+                KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
+                    *provider = match *provider {
+                        Provider::Claude => Provider::Agents,
+                        Provider::Agents => Provider::Claude,
+                    };
+                    app.modal = modal;
+                }
+                KeyCode::Up | KeyCode::Down => {
+                    *scope = match *scope {
+                        Scope::Global => Scope::Project,
+                        Scope::Project => Scope::Global,
+                    };
+                    app.modal = modal;
+                }
+                KeyCode::Backspace => {
+                    name.pop();
+                    app.modal = modal;
+                }
+                KeyCode::Char(c) => {
+                    name.push(c);
+                    app.modal = modal;
+                }
+                _ => app.modal = modal,
+            },
             Modal::None => {}
+        }
+    }
+
+    fn perform_link_harness(&mut self, app: &mut App, file_index: usize, other: Provider) {
+        let Some(file) = app.harness.files.get(file_index).cloned() else {
+            return;
+        };
+        match actions::link_counterpart(&app.harness, &file, other) {
+            Ok(_) => {
+                app.reload_harness();
+                app.set_status(format!("linked {} → {}", other, file.name), false);
+            }
+            Err(e) => app.open_message("link failed", e.to_string(), true),
+        }
+    }
+
+    fn perform_delete_harness(&mut self, app: &mut App, file_index: usize) {
+        let Some(file) = app.harness.files.get(file_index).cloned() else {
+            return;
+        };
+        match actions::delete_harness(&file.path) {
+            Ok(()) => {
+                app.reload_harness();
+                app.set_status(format!("deleted {}", file.name), false);
+            }
+            Err(e) => app.open_message("delete failed", e.to_string(), true),
+        }
+    }
+
+    fn perform_create_command(
+        &mut self,
+        app: &mut App,
+        name: &str,
+        provider: Provider,
+        scope: Scope,
+    ) {
+        match actions::create_command(&app.harness, name, provider, scope) {
+            Ok(_) => {
+                app.reload_harness();
+                if let Some(pos) = app.harness.files.iter().position(|f| {
+                    f.kind == HarnessKind::Command
+                        && f.provider == provider
+                        && f.scope == scope
+                        && f.name == format!("{}.md", name.trim())
+                }) {
+                    app.harness_selected = pos;
+                }
+                app.set_status(format!("created {}.md", name.trim()), false);
+            }
+            Err(e) => app.open_message("create failed", e.to_string(), true),
+        }
+    }
+
+    fn perform_multi_install(
+        &mut self,
+        app: &mut App,
+        skill_name: &str,
+        targets: &[(Provider, Scope)],
+        overwrite: bool,
+    ) {
+        let mut installed = 0usize;
+        for (idx, &(provider, scope)) in targets.iter().enumerate() {
+            match self.try_install(app, skill_name, provider, scope, overwrite) {
+                InstallOutcome::Ok => installed += 1,
+                InstallOutcome::Exists => {
+                    if installed > 0 {
+                        app.reload();
+                    }
+                    app.modal = Modal::ConfirmInstallOverwrite {
+                        skill_name: skill_name.to_string(),
+                        provider,
+                        scope,
+                        pending: targets[idx + 1..].to_vec(),
+                    };
+                    return;
+                }
+                InstallOutcome::Failed(msg) => {
+                    app.open_message("install failed", msg, true);
+                    return;
+                }
+                InstallOutcome::NotReady => return,
+            }
+        }
+        if installed > 0 {
+            app.reload();
+            app.set_status(
+                format!("installed {skill_name} into {installed} location(s)"),
+                false,
+            );
+        }
+    }
+
+    fn resume_pending_install(
+        &mut self,
+        app: &mut App,
+        skill_name: &str,
+        pending: Vec<(Provider, Scope)>,
+    ) {
+        if !pending.is_empty() {
+            self.perform_multi_install(app, skill_name, &pending, false);
         }
     }
 
@@ -805,8 +1157,37 @@ impl Controller {
         scope: Scope,
         overwrite: bool,
     ) {
+        match self.try_install(app, skill_name, provider, scope, overwrite) {
+            InstallOutcome::Ok => {
+                app.reload();
+                app.set_status(
+                    format!("installed {skill_name} → {provider}/{scope}"),
+                    false,
+                );
+            }
+            InstallOutcome::Exists => {
+                app.modal = Modal::ConfirmInstallOverwrite {
+                    skill_name: skill_name.to_string(),
+                    provider,
+                    scope,
+                    pending: Vec::new(),
+                };
+            }
+            InstallOutcome::Failed(msg) => app.open_message("install failed", msg, true),
+            InstallOutcome::NotReady => {}
+        }
+    }
+
+    fn try_install(
+        &mut self,
+        app: &mut App,
+        skill_name: &str,
+        provider: Provider,
+        scope: Scope,
+        overwrite: bool,
+    ) -> InstallOutcome {
         let Some(market) = self.market.as_ref() else {
-            return;
+            return InstallOutcome::NotReady;
         };
         let Some(content) = market.detail_for(skill_name) else {
             app.open_message(
@@ -814,7 +1195,7 @@ impl Controller {
                 "open the skill first so its files can be fetched",
                 true,
             );
-            return;
+            return InstallOutcome::NotReady;
         };
         match actions::install_skill(
             &app.registry,
@@ -824,23 +1205,13 @@ impl Controller {
             scope,
             overwrite,
         ) {
-            Ok(_) => {
-                app.reload();
-                app.set_status(
-                    format!("installed {skill_name} → {provider}/{scope}"),
-                    false,
-                );
-            }
+            Ok(_) => InstallOutcome::Ok,
             Err(e) => {
                 let msg = e.to_string();
                 if !overwrite && msg.contains("already exists") {
-                    app.modal = Modal::ConfirmInstallOverwrite {
-                        skill_name: skill_name.to_string(),
-                        provider,
-                        scope,
-                    };
+                    InstallOutcome::Exists
                 } else {
-                    app.open_message("install failed", msg, true);
+                    InstallOutcome::Failed(msg)
                 }
             }
         }

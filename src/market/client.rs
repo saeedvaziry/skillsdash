@@ -48,6 +48,7 @@ impl Http for UreqClient {
             .agent
             .get(url)
             .set("User-Agent", USER_AGENT)
+            .set("Accept", "application/vnd.github+json")
             .call()
             .map_err(|e| map_err(url, e))?;
         let mut buf = Vec::new();

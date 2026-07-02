@@ -47,7 +47,9 @@ USAGE:
     skillsdash --help     print this help and exit
 
 Skills are read from ~/.claude/skills, ~/.agents/skills, and the current
-project's .claude/.agents directories. Press ? inside the app for keys."
+project's .claude/.agents directories. Press h for the harness view (CLAUDE.md /
+AGENTS.md) or c for the commands view; both let you symlink one provider to
+another. Press ? inside the app for keys."
     );
 }
 

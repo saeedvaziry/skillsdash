@@ -3,7 +3,7 @@ use super::editor::{Editor, VimMode};
 use super::events::Controller;
 use super::market::{Market, MarketFocus};
 use crate::market::MarketSkill;
-use crate::model::{Provider, Scope, Skill};
+use crate::model::{HarnessFile, Provider, Scope, Skill};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -57,6 +57,7 @@ pub fn render(f: &mut Frame, app: &App, controller: &Controller) {
                 render_marketplace(f, m, chunks[1]);
             }
         }
+        Screen::Harness | Screen::Commands => render_harness(f, app, chunks[1]),
     }
 
     render_status(f, app, editor, market, chunks[2]);
@@ -68,6 +69,9 @@ pub fn render(f: &mut Frame, app: &App, controller: &Controller) {
         Modal::Message { .. } => render_message_modal(f, app, area),
         Modal::InstallTarget { .. } => render_install_modal(f, app, area),
         Modal::ConfirmInstallOverwrite { .. } => render_install_overwrite_modal(f, app, area),
+        Modal::LinkHarness { .. } => render_link_harness_modal(f, app, area),
+        Modal::ConfirmDeleteHarness { .. } => render_delete_harness_modal(f, app, area),
+        Modal::CreateCommand { .. } => render_create_command_modal(f, app, area),
     }
 }
 
@@ -83,6 +87,33 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             ),
             Span::raw(" "),
             Span::styled("marketplace", Style::default().fg(DIM)),
+        ]);
+        f.render_widget(Paragraph::new(title), area);
+        return;
+    }
+    if app.screen == Screen::Harness || app.screen == Screen::Commands {
+        let count = app.harness_view_len();
+        let (badge, blurb) = if app.screen == Screen::Commands {
+            (
+                " commands ",
+                format!("{count} command files · global & project"),
+            )
+        } else {
+            (
+                " harness ",
+                format!("{count} memory files · CLAUDE.md / AGENTS.md, global & project"),
+            )
+        };
+        let title = Line::from(vec![
+            Span::styled(
+                badge,
+                Style::default()
+                    .bg(WARN)
+                    .fg(BADGE_FG)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(blurb, Style::default().fg(DIM)),
         ]);
         f.render_widget(Paragraph::new(title), area);
         return;
@@ -106,6 +137,10 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw("  "),
         Span::styled("m marketplace", Style::default().fg(ACCENT2)),
+        Span::raw("  "),
+        Span::styled("h harness", Style::default().fg(WARN)),
+        Span::raw("  "),
+        Span::styled("c commands", Style::default().fg(WARN)),
     ]);
     f.render_widget(Paragraph::new(title), area);
 }
@@ -443,7 +478,7 @@ fn render_editor(f: &mut Frame, editor: &Editor, area: Rect) {
         VimMode::Command => WARN,
     };
     let dirty = if editor.dirty { " ●" } else { "" };
-    let title = format!(" {} — SKILL.md{} ", editor.skill_name, dirty);
+    let title = format!(" {} — {}{} ", editor.skill_name, editor.file_label, dirty);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(mode_color))
@@ -976,10 +1011,377 @@ fn render_market_detail(f: &mut Frame, market: &Market, area: Rect) {
     }
 }
 
+fn render_harness(f: &mut Frame, app: &App, area: Rect) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(area);
+
+    render_harness_list(f, app, cols[0]);
+    render_harness_preview(f, app, cols[1]);
+}
+
+fn render_harness_list(f: &mut Frame, app: &App, area: Rect) {
+    let kind = app.harness_kind();
+    let sections = app.harness_scope_sections(kind);
+
+    let constraints: Vec<Constraint> = sections
+        .iter()
+        .map(|(_, rows)| Constraint::Fill((rows.len().max(1)) as u16))
+        .collect();
+    let slots = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for ((scope, rows), slot) in sections.iter().zip(slots.iter()) {
+        render_harness_section_box(f, app, *slot, *scope, rows);
+    }
+}
+
+fn render_harness_section_box(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    scope: Scope,
+    rows: &[(usize, &HarnessFile)],
+) {
+    let commands = app.screen == Screen::Commands;
+    let kind_label = if commands { "commands" } else { "memory" };
+    let color = match scope {
+        Scope::Global => ACCENT,
+        Scope::Project => ACCENT2,
+    };
+    let title = format!(" {} {} ({}) ", scope.label(), kind_label, rows.len());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(
+            title,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ));
+    f.render_widget(block.clone(), area);
+
+    if rows.is_empty() {
+        let msg = if commands {
+            "no command files — press a to create one"
+        } else {
+            "no memory files"
+        };
+        let inner = block.inner(area);
+        if inner.height > 0 {
+            f.render_widget(Paragraph::new(msg).style(Style::default().fg(DIM)), inner);
+        }
+        return;
+    }
+
+    let items: Vec<ListItem> = rows.iter().map(|(_, file)| harness_item(file)).collect();
+    let mut state = ListState::default();
+    if let Some(local) = rows
+        .iter()
+        .position(|(pos, _)| *pos == app.harness_selected)
+    {
+        state.select(Some(local));
+    }
+    let list = List::default()
+        .items(items)
+        .block(block)
+        .highlight_style(Style::default().bg(HL_BG).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▌ ");
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn harness_item(file: &HarnessFile) -> ListItem<'static> {
+    let name_style = if file.exists {
+        Style::default().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(DIM).add_modifier(Modifier::BOLD)
+    };
+    let mut spans = vec![
+        Span::styled(file.name.clone(), name_style),
+        Span::raw("  "),
+        Span::styled(
+            format!(" {} ", file.provider.label()),
+            Style::default()
+                .fg(BADGE_FG)
+                .bg(provider_color(file.provider)),
+        ),
+    ];
+    if file.is_symlink {
+        spans.push(Span::styled("  ↪ link", Style::default().fg(WARN)));
+    } else if !file.exists {
+        spans.push(Span::styled("  (none)", Style::default().fg(DIM)));
+    }
+    ListItem::new(Line::from(spans))
+}
+
+fn render_harness_preview(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(FAINT))
+        .padding(Padding::horizontal(1))
+        .title(Span::styled(" preview ", Style::default().fg(DIM)));
+
+    let Some(file) = app.harness_selected_file() else {
+        f.render_widget(block, area);
+        return;
+    };
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            file.name.clone(),
+            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(vec![
+            Span::styled(
+                format!("{}", file.provider),
+                Style::default()
+                    .fg(provider_color(file.provider))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" / {}", file.scope), Style::default().fg(DIM)),
+        ]),
+        Line::from(Span::styled(
+            short_path(&file.path.display().to_string()),
+            Style::default().fg(DIM),
+        )),
+        Line::from(""),
+    ];
+
+    if file.is_symlink {
+        lines.push(Line::from(Span::styled(
+            "↪ symlink",
+            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+        )));
+        if let Some(target) = &file.link_target {
+            lines.push(Line::from(Span::styled(
+                format!("  → {}", short_path(&target.display().to_string())),
+                Style::default().fg(DIM),
+            )));
+        }
+        lines.push(Line::from(""));
+    } else if !file.exists {
+        lines.push(Line::from(Span::styled(
+            "does not exist yet",
+            Style::default().fg(FAINT),
+        )));
+        lines.push(Line::from(Span::styled(
+            "press e to create it",
+            Style::default().fg(DIM),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    if file.exists {
+        if let Ok(body) = std::fs::read_to_string(&file.path) {
+            lines.push(Line::from(Span::styled(
+                "contents:",
+                Style::default().fg(DIM),
+            )));
+            for raw in body.lines().take(12) {
+                lines.push(Line::from(Span::styled(
+                    raw.to_string(),
+                    Style::default().fg(FG),
+                )));
+            }
+            if body.lines().count() > 12 {
+                lines.push(Line::from(Span::styled("  …", Style::default().fg(FAINT))));
+            }
+            lines.push(Line::from(""));
+        }
+    }
+
+    let other = match file.provider {
+        Provider::Claude => "agents",
+        Provider::Agents => "claude",
+    };
+    lines.push(Line::from(Span::styled(
+        format!("e edit   s link → {other}   x delete"),
+        Style::default().fg(DIM),
+    )));
+
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_link_harness_modal(f: &mut Frame, app: &App, area: Rect) {
+    let Modal::LinkHarness {
+        source_label,
+        target_label,
+        ..
+    } = &app.modal
+    else {
+        return;
+    };
+    let rect = centered(area, 64.min(area.width.saturating_sub(4)), 11);
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT2))
+        .padding(Padding::uniform(1))
+        .title(Span::styled(
+            " link harness file ",
+            Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD),
+        ));
+    let lines = vec![
+        Line::from(Span::styled(
+            "make a symlink so both providers share one file:",
+            Style::default().fg(DIM),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("source: ", Style::default().fg(DIM)),
+            Span::styled(source_label.clone(), Style::default().fg(FG)),
+        ]),
+        Line::from(vec![
+            Span::styled("link:   ", Style::default().fg(DIM)),
+            Span::styled(target_label.clone(), Style::default().fg(ACCENT2)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "y / enter link · n / esc cancel",
+            Style::default().fg(DIM),
+        )),
+    ];
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
+}
+
+fn render_delete_harness_modal(f: &mut Frame, app: &App, area: Rect) {
+    let Modal::ConfirmDeleteHarness {
+        label, is_symlink, ..
+    } = &app.modal
+    else {
+        return;
+    };
+    let rect = centered(area, 60.min(area.width.saturating_sub(4)), 9);
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ERR))
+        .padding(Padding::uniform(1))
+        .title(Span::styled(
+            " delete harness file ",
+            Style::default().fg(ERR).add_modifier(Modifier::BOLD),
+        ));
+    let what = if *is_symlink {
+        "remove the symlink"
+    } else {
+        "delete the file"
+    };
+    let lines = vec![
+        Line::from(vec![
+            Span::raw(format!("{what} ")),
+            Span::styled(label.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("?"),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "y / enter delete · n / esc cancel",
+            Style::default().fg(DIM),
+        )),
+    ];
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
+}
+
+fn render_create_command_modal(f: &mut Frame, app: &App, area: Rect) {
+    let Modal::CreateCommand {
+        name,
+        provider,
+        scope,
+    } = &app.modal
+    else {
+        return;
+    };
+    let rect = centered(area, 60.min(area.width.saturating_sub(4)), 11);
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(WARN))
+        .padding(Padding::uniform(1))
+        .title(Span::styled(
+            " new command ",
+            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+        ));
+    let mut lines = vec![
+        field_line("name", name, true),
+        Line::from(vec![
+            Span::styled("      /", Style::default().fg(DIM)),
+            Span::styled(format!("{}.md", name.trim()), Style::default().fg(FAINT)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("provider: ", Style::default().fg(DIM)),
+            provider_chip(Provider::Claude, *provider == Provider::Claude),
+            Span::raw("  "),
+            provider_chip(Provider::Agents, *provider == Provider::Agents),
+        ]),
+        Line::from(vec![
+            Span::styled("scope:    ", Style::default().fg(DIM)),
+            scope_chip("global", *scope == Scope::Global),
+            Span::raw("  "),
+            scope_chip("project", *scope == Scope::Project),
+        ]),
+        Line::from(""),
+    ];
+    lines.push(Line::from(Span::styled(
+        "type name · tab provider · ↑/↓ scope · enter create · esc cancel",
+        Style::default().fg(DIM),
+    )));
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
+}
+
+fn provider_chip(provider: Provider, active: bool) -> Span<'static> {
+    if active {
+        Span::styled(
+            format!(" {} ", provider.label()),
+            Style::default()
+                .bg(provider_color(provider))
+                .fg(BADGE_FG)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(format!(" {} ", provider.label()), Style::default().fg(DIM))
+    }
+}
+
+fn scope_chip(label: &str, active: bool) -> Span<'static> {
+    if active {
+        Span::styled(
+            format!(" {label} "),
+            Style::default()
+                .bg(ACCENT2)
+                .fg(BADGE_FG)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(format!(" {label} "), Style::default().fg(DIM))
+    }
+}
+
 fn render_install_modal(f: &mut Frame, app: &App, area: Rect) {
     let Modal::InstallTarget {
         skill_name,
         options,
+        checked,
         cursor,
     } = &app.modal
     else {
@@ -1013,25 +1415,27 @@ fn render_install_modal(f: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
     ];
     for (idx, (provider, scope)) in options.iter().enumerate() {
-        let selected = *cursor == idx;
+        let on_cursor = *cursor == idx;
+        let is_checked = checked.get(idx).copied().unwrap_or(false);
+        let mark = if is_checked { "✓" } else { " " };
+        let style = if on_cursor {
+            Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)
+        } else if is_checked {
+            Style::default().fg(ACCENT2)
+        } else {
+            Style::default().fg(DIM)
+        };
         lines.push(Line::from(vec![
             Span::styled(
-                if selected { "▸ " } else { "  " },
+                if on_cursor { "▸ " } else { "  " },
                 Style::default().fg(ACCENT2),
             ),
-            Span::styled(
-                format!("{provider} / {scope}"),
-                if selected {
-                    Style::default().fg(FG).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(DIM)
-                },
-            ),
+            Span::styled(format!("[{mark}] {provider} / {scope}"), style),
         ]));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "j/k move · enter install · esc cancel",
+        "j/k move · space select · enter install · esc cancel",
         Style::default().fg(DIM),
     )));
     f.render_widget(
@@ -1047,11 +1451,13 @@ fn render_install_overwrite_modal(f: &mut Frame, app: &App, area: Rect) {
         skill_name,
         provider,
         scope,
+        pending,
     } = &app.modal
     else {
         return;
     };
-    let rect = centered(area, 56.min(area.width.saturating_sub(4)), 9);
+    let extra = if pending.is_empty() { 0 } else { 1 };
+    let rect = centered(area, 56.min(area.width.saturating_sub(4)), 9 + extra);
     f.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1061,7 +1467,7 @@ fn render_install_overwrite_modal(f: &mut Frame, app: &App, area: Rect) {
             " overwrite? ",
             Style::default().fg(WARN).add_modifier(Modifier::BOLD),
         ));
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(
                 skill_name.clone(),
@@ -1073,11 +1479,17 @@ fn render_install_overwrite_modal(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(""),
-        Line::from(Span::styled(
-            "y overwrite · n / esc cancel",
-            Style::default().fg(DIM),
-        )),
     ];
+    if !pending.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("{} more location(s) queued after this.", pending.len()),
+            Style::default().fg(DIM),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        "y overwrite · n / esc skip",
+        Style::default().fg(DIM),
+    )));
     f.render_widget(
         Paragraph::new(lines)
             .block(block)
@@ -1125,15 +1537,26 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("f", "edit frontmatter (name / description)"),
         ("s", "share to another provider (copy | symlink)"),
         ("m", "browse the skills.sh marketplace"),
+        ("h", "harness: CLAUDE.md / AGENTS.md (global & project)"),
+        ("c", "commands: slash-command files (global & project)"),
         ("x / D", "delete skill (choose instances)"),
         ("r", "reload from disk"),
         ("q", "quit"),
         ("", ""),
-        ("editor:", "i/a/o insert · esc normal · :w save · :q quit"),
-        ("editor:", "dd cut line · yy yank · p paste · u undo"),
+        ("editor:", "i/a/o insert · esc normal · q quit · ctrl+s save"),
+        ("editor:", "dd cut line · yy yank · p paste · u undo · :w :q"),
         ("", ""),
         ("market:", "type + enter search · j/k move · enter view"),
-        ("market:", "i install · / search again · esc/q back"),
+        ("market:", "i install (space picks locations) · / search · esc/q back"),
+        ("", ""),
+        (
+            "harness:",
+            "tab switch box · e edit · s link · x delete · q back",
+        ),
+        (
+            "commands:",
+            "tab switch box · e edit · a new · s link · x delete",
+        ),
     ];
     let lines: Vec<Line> = rows
         .iter()
@@ -1208,7 +1631,7 @@ fn render_status(
                 Span::raw(" "),
                 Span::styled(cmd, Style::default().fg(WARN)),
                 Span::styled(
-                    "  i insert · esc normal · :w save · :q quit",
+                    "  i insert · esc normal · q quit · ^s save · :w :q",
                     Style::default().fg(DIM),
                 ),
             ])
@@ -1223,9 +1646,15 @@ fn render_status(
     } else {
         let hint = match app.screen {
             Screen::List => {
-                " j/k move · tab switch box · / search · a new · e edit · s share · x delete · ? help"
+                " j/k move · / search · a new · e edit · s share · h harness · c commands · x delete · ? help"
             }
             Screen::Detail => " j/k scroll · e edit · f frontmatter · s share · x delete · h back",
+            Screen::Harness => {
+                " j/k move · tab switch box · e edit · s link claude↔agents · x delete · h/q back"
+            }
+            Screen::Commands => {
+                " j/k move · tab switch box · e edit · a new · s link · x delete · c/q back"
+            }
             Screen::Help => " esc close",
             _ => " esc cancel",
         };

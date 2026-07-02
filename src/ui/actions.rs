@@ -1,5 +1,6 @@
 use crate::market::SkillContent;
 use crate::model::frontmatter::SkillDoc;
+use crate::model::harness::{self, HarnessFile, HarnessKind, HarnessRegistry};
 use crate::model::{fsops, Provider, Registry, Scope};
 use anyhow::{anyhow, bail, Result};
 use std::path::{Path, PathBuf};
@@ -146,4 +147,81 @@ fn is_valid_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+pub fn read_harness(file: &HarnessFile) -> Result<String> {
+    if !file.path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&file.path).map_err(|e| anyhow!("reading {}: {e}", file.path.display()))
+}
+
+pub fn save_harness(path: &Path, body: &str) -> Result<()> {
+    fsops::write_text_file(path, &ensure_trailing_newline(body))
+}
+
+pub fn create_command(
+    reg: &HarnessRegistry,
+    name: &str,
+    provider: Provider,
+    scope: Scope,
+) -> Result<PathBuf> {
+    let name = name.trim();
+    if name.is_empty() {
+        bail!("command name cannot be empty");
+    }
+    if !is_valid_name(name) {
+        bail!("command name may only contain letters, digits, '-' and '_'");
+    }
+    let dir = reg
+        .commands_dir(provider, scope)
+        .ok_or_else(|| anyhow!("no commands directory for {provider}/{scope}"))?;
+    let path = dir.join(format!("{name}.md"));
+    if path.exists() || path.symlink_metadata().is_ok() {
+        bail!("command '{name}' already exists at {}", path.display());
+    }
+    let body = format!("# /{name}\n\nDescribe what this command does.\n");
+    fsops::write_text_file(&path, &body)?;
+    Ok(path)
+}
+
+pub fn delete_harness(path: &Path) -> Result<()> {
+    fsops::delete_file(path)
+}
+
+pub fn counterpart_path(
+    reg: &HarnessRegistry,
+    file: &HarnessFile,
+    other: Provider,
+) -> Result<PathBuf> {
+    match file.kind {
+        HarnessKind::Memory => {
+            let dir = reg
+                .memory_dir(other, file.scope)
+                .ok_or_else(|| anyhow!("no memory location for {other}/{}", file.scope))?;
+            Ok(dir.join(harness::memory_file_name(other)))
+        }
+        HarnessKind::Command => {
+            let dir = reg
+                .commands_dir(other, file.scope)
+                .ok_or_else(|| anyhow!("no commands directory for {other}/{}", file.scope))?;
+            Ok(dir.join(&file.name))
+        }
+    }
+}
+
+pub fn link_counterpart(
+    reg: &HarnessRegistry,
+    file: &HarnessFile,
+    other: Provider,
+) -> Result<PathBuf> {
+    if !file.path.exists() {
+        bail!(
+            "{} does not exist yet — edit it first, then link",
+            file.name
+        );
+    }
+    let dst = counterpart_path(reg, file, other)?;
+    fsops::symlink_file(&file.path, &dst)?;
+    Ok(dst)
 }

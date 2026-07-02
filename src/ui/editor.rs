@@ -26,11 +26,19 @@ pub enum EditorSignal {
     SaveAndQuit,
 }
 
+#[derive(Debug, Clone)]
+pub enum EditorTarget {
+    SkillBody,
+    PlainFile,
+}
+
 pub struct Editor {
     pub textarea: TextArea<'static>,
     pub mode: VimMode,
     pub skill_md: PathBuf,
     pub skill_name: String,
+    pub file_label: String,
+    pub target: EditorTarget,
     pub command: String,
     pub dirty: bool,
     pub pending_g: bool,
@@ -40,6 +48,22 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(skill_md: PathBuf, skill_name: String, body: &str) -> Editor {
+        Editor::with_target(
+            skill_md,
+            skill_name,
+            "SKILL.md".to_string(),
+            EditorTarget::SkillBody,
+            body,
+        )
+    }
+
+    pub fn with_target(
+        path: PathBuf,
+        title: String,
+        file_label: String,
+        target: EditorTarget,
+        body: &str,
+    ) -> Editor {
         let lines: Vec<String> = if body.is_empty() {
             vec![String::new()]
         } else {
@@ -50,8 +74,10 @@ impl Editor {
         Editor {
             textarea,
             mode: VimMode::Normal,
-            skill_md,
-            skill_name,
+            skill_md: path,
+            skill_name: title,
+            file_label,
+            target,
             command: String::new(),
             dirty: false,
             pending_g: false,
@@ -65,6 +91,10 @@ impl Editor {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> EditorSignal {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
+            self.mode = VimMode::Normal;
+            return EditorSignal::Save;
+        }
         match self.mode {
             VimMode::Insert => self.handle_insert(key),
             VimMode::Normal => self.handle_normal(key),
@@ -209,6 +239,7 @@ impl Editor {
                 self.mode = VimMode::Command;
                 self.command.clear();
             }
+            KeyCode::Char('q') => return EditorSignal::Quit,
             KeyCode::Esc => {}
             _ => {}
         }

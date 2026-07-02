@@ -6,6 +6,6 @@ pub mod market;
 pub mod render;
 
 pub use app::App;
-pub use editor::Editor;
+pub use editor::{Editor, EditorTarget};
 pub use events::Controller;
 pub use market::Market;
