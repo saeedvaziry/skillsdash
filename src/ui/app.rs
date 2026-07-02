@@ -1,4 +1,4 @@
-use crate::model::{Provider, Registry, Scope, Skill};
+use crate::model::{HarnessFile, HarnessKind, HarnessRegistry, Provider, Registry, Scope, Skill};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +39,18 @@ pub enum Screen {
     Form,
     Help,
     Marketplace,
+    Harness,
+    Commands,
+}
+
+impl Screen {
+    pub fn harness_kind(self) -> Option<HarnessKind> {
+        match self {
+            Screen::Harness => Some(HarnessKind::Memory),
+            Screen::Commands => Some(HarnessKind::Command),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,10 +75,28 @@ pub enum Modal {
     InstallTarget {
         skill_name: String,
         options: Vec<(Provider, Scope)>,
+        checked: Vec<bool>,
         cursor: usize,
     },
     ConfirmInstallOverwrite {
         skill_name: String,
+        provider: Provider,
+        scope: Scope,
+        pending: Vec<(Provider, Scope)>,
+    },
+    LinkHarness {
+        file_index: usize,
+        source_label: String,
+        target_label: String,
+        target_provider: Provider,
+    },
+    ConfirmDeleteHarness {
+        file_index: usize,
+        label: String,
+        is_symlink: bool,
+    },
+    CreateCommand {
+        name: String,
         provider: Provider,
         scope: Scope,
     },
@@ -128,6 +158,8 @@ impl FormState {
 
 pub struct App {
     pub registry: Registry,
+    pub harness: HarnessRegistry,
+    pub harness_selected: usize,
     pub project_dir: PathBuf,
     pub screen: Screen,
     pub prev_screen: Screen,
@@ -148,8 +180,11 @@ pub struct App {
 impl App {
     pub fn new(project_dir: PathBuf) -> App {
         let registry = Registry::discover(&project_dir);
+        let harness = HarnessRegistry::discover(&project_dir);
         let mut app = App {
             registry,
+            harness,
+            harness_selected: 0,
             project_dir,
             screen: Screen::List,
             prev_screen: Screen::List,
@@ -343,5 +378,112 @@ impl App {
             body: body.into(),
             is_error,
         };
+    }
+
+    pub fn harness_kind(&self) -> HarnessKind {
+        self.screen.harness_kind().unwrap_or(HarnessKind::Memory)
+    }
+
+    pub fn harness_view_files(&self, kind: HarnessKind) -> Vec<&HarnessFile> {
+        self.harness
+            .files
+            .iter()
+            .filter(|f| f.kind == kind)
+            .collect()
+    }
+
+    pub fn harness_scope_sections(
+        &self,
+        kind: HarnessKind,
+    ) -> Vec<(Scope, Vec<(usize, &HarnessFile)>)> {
+        let mut global = Vec::new();
+        let mut project = Vec::new();
+        for (pos, file) in self.harness_view_files(kind).into_iter().enumerate() {
+            match file.scope {
+                Scope::Global => global.push((pos, file)),
+                Scope::Project => project.push((pos, file)),
+            }
+        }
+        vec![(Scope::Global, global), (Scope::Project, project)]
+    }
+
+    pub fn harness_selected_file(&self) -> Option<&HarnessFile> {
+        self.harness_view_files(self.harness_kind())
+            .into_iter()
+            .nth(self.harness_selected)
+    }
+
+    pub fn harness_view_len(&self) -> usize {
+        self.harness_view_files(self.harness_kind()).len()
+    }
+
+    pub fn harness_move(&mut self, delta: i64) {
+        let count = self.harness_view_len() as i64;
+        if count == 0 {
+            return;
+        }
+        let mut next = self.harness_selected as i64 + delta;
+        if next < 0 {
+            next = 0;
+        }
+        if next >= count {
+            next = count - 1;
+        }
+        self.harness_selected = next as usize;
+    }
+
+    pub fn harness_select_last(&mut self) {
+        self.harness_selected = self.harness_view_len().saturating_sub(1);
+    }
+
+    pub fn harness_focus_other_scope(&mut self) {
+        let kind = self.harness_kind();
+        let current = self
+            .harness_view_files(kind)
+            .get(self.harness_selected)
+            .map(|f| f.scope);
+        let target = match current {
+            Some(Scope::Global) => Scope::Project,
+            _ => Scope::Global,
+        };
+        if let Some(pos) = self
+            .harness_view_files(kind)
+            .iter()
+            .position(|f| f.scope == target)
+        {
+            self.harness_selected = pos;
+        }
+    }
+
+    pub fn harness_selected_abs_index(&self) -> Option<usize> {
+        let kind = self.harness_kind();
+        self.harness
+            .files
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.kind == kind)
+            .nth(self.harness_selected)
+            .map(|(i, _)| i)
+    }
+
+    pub fn reload_harness(&mut self) {
+        let kind = self.harness_kind();
+        let key = self
+            .harness_selected_file()
+            .map(|f| (f.provider, f.scope, f.name.clone()));
+        self.harness.reload();
+        if let Some((provider, scope, name)) = key {
+            if let Some(pos) = self
+                .harness_view_files(kind)
+                .iter()
+                .position(|f| f.provider == provider && f.scope == scope && f.name == name)
+            {
+                self.harness_selected = pos;
+            }
+        }
+        let len = self.harness_view_len();
+        if self.harness_selected >= len {
+            self.harness_selected = len.saturating_sub(1);
+        }
     }
 }

@@ -89,6 +89,47 @@ pub fn symlink_dir(src: &Path, dst: &Path) -> Result<()> {
     symlink_path(&target, dst)
 }
 
+pub fn symlink_file(src: &Path, dst: &Path) -> Result<()> {
+    if !src.exists() {
+        bail!("source does not exist: {}", src.display());
+    }
+    if dst.exists() || dst.symlink_metadata().is_ok() {
+        bail!("target already exists: {}", dst.display());
+    }
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let target = fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
+    symlink_path(&target, dst)
+}
+
+pub fn write_text_file(path: &Path, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| anyhow!("creating {}: {e}", parent.display()))?;
+    }
+    if path
+        .symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        remove_symlink(path)?;
+    }
+    fs::write(path, contents).map_err(|e| anyhow!("writing {}: {e}", path.display()))?;
+    Ok(())
+}
+
+pub fn delete_file(path: &Path) -> Result<()> {
+    let meta = path
+        .symlink_metadata()
+        .map_err(|e| anyhow!("reading {}: {e}", path.display()))?;
+    if meta.file_type().is_symlink() {
+        remove_symlink(path)?;
+    } else {
+        fs::remove_file(path).map_err(|e| anyhow!("deleting {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn symlink_path(target: &Path, link: &Path) -> Result<()> {
     std::os::unix::fs::symlink(target, link)

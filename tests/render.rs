@@ -1,6 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use skillsdash::model::{Provider, Scope};
+use skillsdash::ui::app::Modal;
 use skillsdash::ui::{render, App, Controller};
 use std::fs;
 use std::path::PathBuf;
@@ -26,6 +28,15 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: crossterm::event::KeyEventState::NONE,
+    }
+}
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent {
+        code: KeyCode::Char(c),
+        modifiers: KeyModifiers::CONTROL,
         kind: KeyEventKind::Press,
         state: crossterm::event::KeyEventState::NONE,
     }
@@ -94,6 +105,187 @@ fn renders_every_screen_without_panic() {
     draw(&app, &controller);
     assert!(controller.editor.is_some(), "editor should be open");
 
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn harness_view_shows_only_memory_files_and_edits() {
+    use skillsdash::model::HarnessKind;
+    let dir = temp_project("harness");
+    let home = dir.join("fakehome");
+    fs::create_dir_all(&home).unwrap();
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    controller.handle_key(&mut app, press('h'));
+    assert_eq!(app.screen, skillsdash::ui::app::Screen::Harness);
+    let view = app.harness_view_files(HarnessKind::Memory);
+    assert!(view.iter().all(|f| f.kind == HarnessKind::Memory));
+    assert!(view.iter().any(|f| f.name == "CLAUDE.md"));
+    assert!(view.iter().any(|f| f.name == "AGENTS.md"));
+    draw(&app, &controller);
+
+    controller.handle_key(&mut app, press('e'));
+    assert!(controller.editor.is_some(), "memory editor should open");
+    assert_eq!(app.screen, skillsdash::ui::app::Screen::Editor);
+    draw(&app, &controller);
+
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn commands_view_shows_only_commands_and_creates() {
+    use skillsdash::model::HarnessKind;
+    let dir = temp_project("commands");
+    let home = dir.join("fakehome");
+    fs::create_dir_all(&home).unwrap();
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    controller.handle_key(&mut app, press('c'));
+    assert_eq!(app.screen, skillsdash::ui::app::Screen::Commands);
+    assert!(app
+        .harness_view_files(HarnessKind::Command)
+        .iter()
+        .all(|f| f.kind == HarnessKind::Command));
+    draw(&app, &controller);
+
+    controller.handle_key(&mut app, press('a'));
+    type_str(&mut app, &mut controller, "review");
+    controller.handle_key(&mut app, key(KeyCode::Enter));
+    draw(&app, &controller);
+
+    let cmds = app.harness_view_files(HarnessKind::Command);
+    assert!(
+        cmds.iter().any(|f| f.name == "review.md"),
+        "created command should appear in the commands view"
+    );
+    let review_pos = cmds
+        .iter()
+        .position(|f| f.name == "review.md")
+        .expect("created command should have a command-view index");
+    assert_eq!(app.harness_selected, review_pos);
+    assert_eq!(
+        app.harness_selected_file().map(|f| f.name.as_str()),
+        Some("review.md")
+    );
+    assert!(!cmds.iter().any(|f| f.name == "CLAUDE.md"));
+
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn harness_view_groups_by_scope_and_tab_switches() {
+    use skillsdash::model::{HarnessKind, Scope};
+    let dir = temp_project("harness-groups");
+    let home = dir.join("fakehome");
+    fs::create_dir_all(&home).unwrap();
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+    controller.handle_key(&mut app, press('h'));
+
+    let sections = app.harness_scope_sections(HarnessKind::Memory);
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0].0, Scope::Global);
+    assert_eq!(sections[1].0, Scope::Project);
+    assert!(sections[0].1.iter().all(|(_, f)| f.scope == Scope::Global));
+    assert!(sections[1].1.iter().all(|(_, f)| f.scope == Scope::Project));
+
+    assert_eq!(
+        app.harness_selected_file().map(|f| f.scope),
+        Some(Scope::Global)
+    );
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(
+        app.harness_selected_file().map(|f| f.scope),
+        Some(Scope::Project)
+    );
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(
+        app.harness_selected_file().map(|f| f.scope),
+        Some(Scope::Global)
+    );
+
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn highlighted_none_row_keeps_foreground_off_the_highlight_background() {
+    use ratatui::style::Color;
+    let dir = temp_project("harness-none");
+    let home = dir.join("fakehome");
+    fs::create_dir_all(&home).unwrap();
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+
+    fs::write(dir.join("CLAUDE.md"), "# project\n").unwrap();
+
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+    controller.handle_key(&mut app, press('h'));
+    controller.handle_key(&mut app, key(KeyCode::Tab));
+    controller.handle_key(&mut app, press('j'));
+
+    let sel = app.harness_selected_file().unwrap();
+    assert_eq!(sel.name, "AGENTS.md");
+    assert!(!sel.exists, "AGENTS.md should be a (none) row");
+
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render::render(f, &app, &controller))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+
+    let mut checked = 0;
+    for y in 0..buf.area.height {
+        let mut row = String::new();
+        for x in 0..buf.area.width {
+            row.push_str(buf.cell((x, y)).unwrap().symbol());
+        }
+        if row.contains("▌ AGENTS.md") && row.contains("(none)") {
+            for x in 0..buf.area.width {
+                let cell = buf.cell((x, y)).unwrap();
+                if cell.symbol().trim().is_empty() {
+                    continue;
+                }
+                if cell.bg == Color::Indexed(8) && cell.fg != Color::Reset {
+                    assert_ne!(cell.fg, cell.bg, "text invisible against highlight bg");
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        checked > 0,
+        "expected to inspect the highlighted (none) row"
+    );
+
+    match prev_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -294,6 +486,81 @@ fn editor_edits_and_saves_body() {
     assert!(
         content.contains("name: demo"),
         "frontmatter must be preserved"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn editor_ctrl_s_saves_and_returns_to_normal_mode() {
+    use skillsdash::ui::editor::VimMode;
+    let dir = temp_project("editctrls");
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    let idx = app
+        .filtered_indices()
+        .iter()
+        .position(|&i| app.registry.skills[i].name == "demo")
+        .unwrap();
+    app.selected = idx;
+
+    controller.handle_key(&mut app, press('e'));
+    controller.handle_key(&mut app, press('G'));
+    controller.handle_key(&mut app, press('o'));
+    type_str(&mut app, &mut controller, "CTRL S LINE");
+    controller.handle_key(&mut app, ctrl('s'));
+
+    let editor = controller
+        .editor
+        .as_ref()
+        .expect("ctrl+s saves without closing the editor");
+    assert_eq!(
+        editor.mode,
+        VimMode::Normal,
+        "ctrl+s switches from insert to normal mode"
+    );
+
+    let md = dir.join(".claude/skills/demo/SKILL.md");
+    let content = fs::read_to_string(&md).unwrap();
+    assert!(
+        content.contains("CTRL S LINE"),
+        "ctrl+s should persist body edits from insert mode:\n{content}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn editor_q_quits_from_normal_mode_without_saving() {
+    let dir = temp_project("editq");
+    let mut app = App::new(dir.clone());
+    let mut controller = Controller::new();
+
+    let idx = app
+        .filtered_indices()
+        .iter()
+        .position(|&i| app.registry.skills[i].name == "demo")
+        .unwrap();
+    app.selected = idx;
+
+    controller.handle_key(&mut app, press('e'));
+    controller.handle_key(&mut app, press('G'));
+    controller.handle_key(&mut app, press('o'));
+    type_str(&mut app, &mut controller, "UNSAVED LINE");
+    controller.handle_key(&mut app, key(KeyCode::Esc));
+    controller.handle_key(&mut app, press('q'));
+
+    assert!(
+        controller.editor.is_none(),
+        "q in normal mode closes the editor"
+    );
+
+    let md = dir.join(".claude/skills/demo/SKILL.md");
+    let content = fs::read_to_string(&md).unwrap();
+    assert!(
+        !content.contains("UNSAVED LINE"),
+        "q must not save the edit:\n{content}"
     );
 
     let _ = fs::remove_dir_all(&dir);
@@ -552,6 +819,71 @@ fn search_filters_list() {
             "every match must contain the query: {name}"
         );
     }
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+fn buffer_text(app: &App, controller: &Controller) -> String {
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render::render(f, app, controller))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut out = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            out.push_str(buf.cell((x, y)).unwrap().symbol());
+        }
+        out.push('\n');
+    }
+    out
+}
+
+#[test]
+fn install_modal_multi_select_toggles_and_renders_checkboxes() {
+    let dir = temp_project("install-multi");
+    let mut app = App::new(dir.clone());
+    let controller = Controller::new();
+
+    let options = vec![
+        (Provider::Claude, Scope::Global),
+        (Provider::Claude, Scope::Project),
+        (Provider::Agents, Scope::Global),
+    ];
+    app.modal = Modal::InstallTarget {
+        skill_name: "demo".to_string(),
+        options: options.clone(),
+        checked: vec![false; options.len()],
+        cursor: 0,
+    };
+
+    let screen = buffer_text(&app, &controller);
+    assert!(screen.contains("[ ]"), "unchecked boxes render");
+    assert!(
+        screen.contains("space select"),
+        "hint mentions space-to-select"
+    );
+
+    let mut controller = controller;
+    controller.handle_key(&mut app, press(' '));
+    controller.handle_key(&mut app, press('j'));
+    controller.handle_key(&mut app, press('j'));
+    controller.handle_key(&mut app, press(' '));
+
+    match &app.modal {
+        Modal::InstallTarget { checked, .. } => {
+            assert_eq!(
+                checked,
+                &vec![true, false, true],
+                "space toggles the row under the cursor"
+            );
+        }
+        _ => panic!("install modal should stay open after toggling"),
+    }
+
+    let screen = buffer_text(&app, &controller);
+    assert!(screen.contains("[✓]"), "checked boxes render after toggle");
 
     let _ = fs::remove_dir_all(&dir);
 }
